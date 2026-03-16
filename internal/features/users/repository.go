@@ -20,9 +20,16 @@ type Repository interface {
 	IncrementProfileViews(ctx context.Context, userID bson.ObjectID) error                  // MVP Feature: User Profile Management
 	FollowUser(ctx context.Context, followerID, followedID bson.ObjectID) error
 	UnfollowUser(ctx context.Context, followerID, followedID bson.ObjectID) error
+	IncrementFollowersCount(ctx context.Context, userID bson.ObjectID) error
+	DecrementFollowersCount(ctx context.Context, userID bson.ObjectID) error
+	IncrementFollowingCount(ctx context.Context, userID bson.ObjectID) error
+	DecrementFollowingCount(ctx context.Context, userID bson.ObjectID) error
+	GetUserByUsername(ctx context.Context, username string) (*models.User, error)
 	SearchUsers(ctx context.Context, query string, limit, offset int) ([]models.User, error)
 	AddFCMToken(ctx context.Context, userID bson.ObjectID, token string) error
 	RemoveFCMTokens(ctx context.Context, userID bson.ObjectID, tokens []string) error
+	IncrementPostsCount(ctx context.Context, userID bson.ObjectID) error
+	DecrementPostsCount(ctx context.Context, userID bson.ObjectID) error
 }
 
 type repository struct {
@@ -108,7 +115,7 @@ func (r *repository) GetFollowedUsers(ctx context.Context, userID bson.ObjectID)
 
 	var followedIDs []bson.ObjectID
 	for _, f := range follows {
-		followedIDs = append(followedIDs, f.FollowedUserID)
+		followedIDs = append(followedIDs, f.FollowingID)
 	}
 	return followedIDs, nil
 }
@@ -116,7 +123,7 @@ func (r *repository) GetFollowedUsers(ctx context.Context, userID bson.ObjectID)
 // MVP Launch: User-to-User Follow System - Completed
 func (r *repository) FollowUser(ctx context.Context, followerID, followedUserID bson.ObjectID) error {
 	// Check if already following
-	count, err := r.followsColl.CountDocuments(ctx, bson.M{"followerId": followerID, "followedUserId": followedUserID})
+	count, err := r.followsColl.CountDocuments(ctx, bson.M{"followerId": followerID, "followingId": followedUserID})
 	if err != nil {
 		return err
 	}
@@ -133,20 +140,20 @@ func (r *repository) FollowUser(ctx context.Context, followerID, followedUserID 
 
 	_, err = session.WithTransaction(ctx, func(sessCtx context.Context) (interface{}, error) {
 		// 1. Insert follow
-		follow := models.Follow{FollowerID: followerID, FollowedUserID: followedUserID, CreatedAt: time.Now()}
+		follow := models.Follow{FollowerID: followerID, FollowingID: followedUserID, CreatedAt: time.Now()}
 		_, err := r.followsColl.InsertOne(sessCtx, follow)
 		if err != nil {
 			return nil, err
 		}
 
 		// 2. Increment follower's following count
-		_, err = r.collection.UpdateOne(sessCtx, bson.M{"_id": followerID}, bson.M{"$inc": bson.M{"stats.followingCount": 1}})
+		_, err = r.collection.UpdateOne(sessCtx, bson.M{"_id": followerID}, bson.M{"$inc": bson.M{"followingCount": 1}})
 		if err != nil {
 			return nil, err
 		}
 
 		// 3. Increment followed user's followers count
-		_, err = r.collection.UpdateOne(sessCtx, bson.M{"_id": followedUserID}, bson.M{"$inc": bson.M{"stats.followersCount": 1}})
+		_, err = r.collection.UpdateOne(sessCtx, bson.M{"_id": followedUserID}, bson.M{"$inc": bson.M{"followersCount": 1}})
 		if err != nil {
 			return nil, err
 		}
@@ -167,7 +174,7 @@ func (r *repository) UnfollowUser(ctx context.Context, followerID, followedUserI
 
 	_, err = session.WithTransaction(ctx, func(sessCtx context.Context) (interface{}, error) {
 		// 1. Delete follow
-		res, err := r.followsColl.DeleteOne(sessCtx, bson.M{"followerId": followerID, "followedUserId": followedUserID})
+		res, err := r.followsColl.DeleteOne(sessCtx, bson.M{"followerId": followerID, "followingId": followedUserID})
 		if err != nil {
 			return nil, err
 		}
@@ -176,13 +183,13 @@ func (r *repository) UnfollowUser(ctx context.Context, followerID, followedUserI
 		}
 
 		// 2. Decrement follower's following count
-		_, err = r.collection.UpdateOne(sessCtx, bson.M{"_id": followerID}, bson.M{"$inc": bson.M{"stats.followingCount": -1}})
+		_, err = r.collection.UpdateOne(sessCtx, bson.M{"_id": followerID}, bson.M{"$inc": bson.M{"followingCount": -1}})
 		if err != nil {
 			return nil, err
 		}
 
 		// 3. Decrement followed user's followers count
-		_, err = r.collection.UpdateOne(sessCtx, bson.M{"_id": followedUserID}, bson.M{"$inc": bson.M{"stats.followersCount": -1}})
+		_, err = r.collection.UpdateOne(sessCtx, bson.M{"_id": followedUserID}, bson.M{"$inc": bson.M{"followersCount": -1}})
 		if err != nil {
 			return nil, err
 		}
@@ -191,6 +198,15 @@ func (r *repository) UnfollowUser(ctx context.Context, followerID, followedUserI
 	})
 
 	return err
+}
+
+func (r *repository) GetUserByUsername(ctx context.Context, username string) (*models.User, error) {
+	var user models.User
+	err := r.collection.FindOne(ctx, bson.M{"username": username}).Decode(&user)
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
 }
 
 func (r *repository) SearchUsers(ctx context.Context, query string, limit, offset int) ([]models.User, error) {
@@ -269,6 +285,54 @@ func (r *repository) RemoveFCMTokens(ctx context.Context, userID bson.ObjectID, 
 	_, err := r.collection.UpdateOne(ctx,
 		bson.M{"_id": userID},
 		bson.M{"$pullAll": bson.M{"fcmTokens": tokens}},
+	)
+	return err
+}
+
+func (r *repository) IncrementPostsCount(ctx context.Context, userID bson.ObjectID) error {
+	_, err := r.collection.UpdateOne(ctx,
+		bson.M{"_id": userID},
+		bson.M{"$inc": bson.M{"postsCount": 1}},
+	)
+	return err
+}
+
+func (r *repository) DecrementPostsCount(ctx context.Context, userID bson.ObjectID) error {
+	_, err := r.collection.UpdateOne(ctx,
+		bson.M{"_id": userID, "postsCount": bson.M{"$gt": 0}},
+		bson.M{"$inc": bson.M{"postsCount": -1}},
+	)
+	return err
+}
+
+func (r *repository) IncrementFollowersCount(ctx context.Context, userID bson.ObjectID) error {
+	_, err := r.collection.UpdateOne(ctx,
+		bson.M{"_id": userID},
+		bson.M{"$inc": bson.M{"followersCount": 1}},
+	)
+	return err
+}
+
+func (r *repository) DecrementFollowersCount(ctx context.Context, userID bson.ObjectID) error {
+	_, err := r.collection.UpdateOne(ctx,
+		bson.M{"_id": userID, "followersCount": bson.M{"$gt": 0}},
+		bson.M{"$inc": bson.M{"followersCount": -1}},
+	)
+	return err
+}
+
+func (r *repository) IncrementFollowingCount(ctx context.Context, userID bson.ObjectID) error {
+	_, err := r.collection.UpdateOne(ctx,
+		bson.M{"_id": userID},
+		bson.M{"$inc": bson.M{"followingCount": 1}},
+	)
+	return err
+}
+
+func (r *repository) DecrementFollowingCount(ctx context.Context, userID bson.ObjectID) error {
+	_, err := r.collection.UpdateOne(ctx,
+		bson.M{"_id": userID, "followingCount": bson.M{"$gt": 0}},
+		bson.M{"$inc": bson.M{"followingCount": -1}},
 	)
 	return err
 }

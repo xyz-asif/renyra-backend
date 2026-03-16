@@ -79,15 +79,6 @@ func (s *service) GetOrCreateDirectRoom(ctx context.Context, user1IDStr, user2ID
 		return nil, errors.New("cannot create room with yourself")
 	}
 
-	// Check if users have an accepted connection before allowing a chat room
-	conn, err := s.connRepo.GetConnectionBetweenUsers(ctx, user1ID, user2ID)
-	if err != nil {
-		return nil, err
-	}
-	if conn == nil || conn.Status != models.ConnectionStatusAccepted {
-		return nil, errors.New("you must be connected (friends) with this user before chatting")
-	}
-
 	// Atomic find-or-create eliminates the TOCTOU race between two concurrent requests
 	room, err := s.repo.GetOrCreateDirectRoomAtomic(ctx, user1ID, user2ID)
 	if err != nil {

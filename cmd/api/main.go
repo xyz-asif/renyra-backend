@@ -12,7 +12,12 @@ import (
 	"github.com/xyz-asif/gotodo/internal/database"
 	"github.com/xyz-asif/gotodo/internal/features/chat"
 	"github.com/xyz-asif/gotodo/internal/features/connections"
+	"github.com/xyz-asif/gotodo/internal/features/feed"
+	"github.com/xyz-asif/gotodo/internal/features/follows"
 	"github.com/xyz-asif/gotodo/internal/features/notifications"
+	"github.com/xyz-asif/gotodo/internal/features/poems"
+	"github.com/xyz-asif/gotodo/internal/features/profile"
+	"github.com/xyz-asif/gotodo/internal/features/social"
 	"github.com/xyz-asif/gotodo/internal/features/users"
 	"github.com/xyz-asif/gotodo/internal/middleware"
 	"github.com/xyz-asif/gotodo/internal/routes"
@@ -66,6 +71,29 @@ func main() {
 	connectionHandler := connections.NewHandler(connectionService)
 	chatHandler := chat.NewHandler(chatService)
 
+	// Initialize poetry feature
+	profileRepo := profile.NewRepository(db.Database)
+	profileService := profile.NewService(profileRepo)
+	profileHandler := profile.NewHandler(profileService)
+
+	// Initialize social feature (likes, comments, reposts) — before poems so we can enrich isLikedByMe
+	socialRepo := social.NewRepository(db.Database)
+
+	poemRepo := poems.NewRepository(db.Database)
+	poemService := poems.NewService(poemRepo, userRepo, socialRepo)
+	poemHandler := poems.NewHandler(poemService)
+
+	followRepo := follows.NewRepository(db.Database)
+	followService := follows.NewService(followRepo, userRepo, notifService)
+	followHandler := follows.NewHandler(followService)
+
+	socialService := social.NewService(socialRepo, userRepo, notifService, db.Database)
+	socialHandler := social.NewHandler(socialService)
+
+	feedRepo := feed.NewRepository(db.Database)
+	feedService := feed.NewService(feedRepo, followRepo, userRepo, socialRepo)
+	feedHandler := feed.NewHandler(feedService)
+
 	// 5. Setup Middleware
 	authMiddleware, err := middleware.NewAuthMiddleware(cfg.FirebaseCredsPath, cfg.FirebaseProjectID, userService)
 	if err != nil {
@@ -95,6 +123,11 @@ func main() {
 		connectionHandler,
 		chatHandler,
 		notifHandler,
+		profileHandler,
+		poemHandler,
+		followHandler,
+		feedHandler,
+		socialHandler,
 	)
 	// 8. Start Server
 	log.Printf("🚀 Starting Chat API on port %s", cfg.Port)

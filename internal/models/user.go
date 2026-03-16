@@ -6,12 +6,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-// Follow represents a user following another user
-type Follow struct {
-	FollowerID     bson.ObjectID `bson:"followerId" json:"followerId"`
-	FollowedUserID bson.ObjectID `bson:"followedUserId" json:"followedUserId"`
-	CreatedAt      time.Time     `bson:"createdAt" json:"createdAt"`
-}
+
 
 // UserStats holds denormalized statistics for a user.
 type UserStats struct {
@@ -54,6 +49,14 @@ type User struct {
 	DisplayName             string                      `bson:"displayName" json:"displayName"`
 	PhotoURL                string                      `bson:"photoURL" json:"photoURL"`
 	Bio                     string                      `bson:"bio" json:"bio"`
+	Username                string                      `bson:"username,omitempty" json:"username,omitempty"`
+	ExternalLink            string                      `bson:"externalLink,omitempty" json:"externalLink,omitempty"`
+	CoverImageURL           string                      `bson:"coverImageURL,omitempty" json:"coverImageURL,omitempty"`
+	IsProfileSetup          bool                        `bson:"isProfileSetup" json:"isProfileSetup"`
+	IsEditor                bool                        `bson:"isEditor" json:"isEditor"`
+	PostsCount              int                         `bson:"postsCount" json:"postsCount"`
+	FollowersCount          int                         `bson:"followersCount" json:"followersCount"`
+	FollowingCount          int                         `bson:"followingCount" json:"followingCount"`
 	CreatedAt               time.Time                   `bson:"createdAt" json:"createdAt"`
 	UpdatedAt               time.Time                   `bson:"updatedAt" json:"updatedAt"`
 	LastLoginAt             time.Time                   `bson:"lastLoginAt" json:"lastLoginAt"`
