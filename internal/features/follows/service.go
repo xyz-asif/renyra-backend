@@ -3,6 +3,8 @@ package follows
 import (
 	"context"
 	"errors"
+	"fmt"
+	"time"
 
 	"github.com/xyz-asif/gotodo/internal/features/notifications"
 	"github.com/xyz-asif/gotodo/internal/features/users"
@@ -22,10 +24,11 @@ type service struct {
 	repo         Repository
 	userRepo     users.Repository
 	notifService notifications.Service
+	mongoClient  *mongo.Client
 }
 
-func NewService(repo Repository, userRepo users.Repository, notifService notifications.Service) Service {
-	return &service{repo: repo, userRepo: userRepo, notifService: notifService}
+func NewService(repo Repository, userRepo users.Repository, notifService notifications.Service, mongoClient *mongo.Client) Service {
+	return &service{repo: repo, userRepo: userRepo, notifService: notifService, mongoClient: mongoClient}
 }
 
 // ToggleFollow follows or unfollows a user. Returns true if now following, false if unfollowed.
@@ -55,36 +58,68 @@ func (s *service) ToggleFollow(ctx context.Context, followerIDStr, followingIDSt
 	}
 
 	if alreadyFollowing {
-		// Unfollow
-		if err := s.repo.Unfollow(ctx, followerID, followingID); err != nil {
-			return false, err
+		// === UNFOLLOW (in transaction) ===
+		session, err := s.mongoClient.StartSession()
+		if err != nil {
+			return false, fmt.Errorf("failed to start session: %w", err)
 		}
-		// Decrement counts synchronously so the values are correct immediately
-		_ = s.userRepo.DecrementFollowersCount(ctx, followingID)
-		_ = s.userRepo.DecrementFollowingCount(ctx, followerID)
+		defer session.EndSession(ctx)
+
+		_, err = session.WithTransaction(ctx, func(sessCtx context.Context) (interface{}, error) {
+			if err := s.repo.Unfollow(sessCtx, followerID, followingID); err != nil {
+				return nil, err
+			}
+			if err := s.userRepo.DecrementFollowersCount(sessCtx, followingID); err != nil {
+				return nil, fmt.Errorf("failed to decrement followers count: %w", err)
+			}
+			if err := s.userRepo.DecrementFollowingCount(sessCtx, followerID); err != nil {
+				return nil, fmt.Errorf("failed to decrement following count: %w", err)
+			}
+			return nil, nil
+		})
+		if err != nil {
+			return false, fmt.Errorf("unfollow transaction failed: %w", err)
+		}
 		return false, nil
 	}
 
-	// Follow
-	if err := s.repo.Follow(ctx, followerID, followingID); err != nil {
-		if mongo.IsDuplicateKeyError(err) {
-			return true, nil // already following due to race — idempotent
-		}
-		return false, err
+	// === FOLLOW (in transaction) ===
+	session, err := s.mongoClient.StartSession()
+	if err != nil {
+		return false, fmt.Errorf("failed to start session: %w", err)
 	}
-	// Increment counts synchronously so the values are correct immediately
-	_ = s.userRepo.IncrementFollowersCount(ctx, followingID)
-	_ = s.userRepo.IncrementFollowingCount(ctx, followerID)
+	defer session.EndSession(ctx)
 
-	// Notify the followed user (non-critical, keep async)
+	_, err = session.WithTransaction(ctx, func(sessCtx context.Context) (interface{}, error) {
+		if err := s.repo.Follow(sessCtx, followerID, followingID); err != nil {
+			if mongo.IsDuplicateKeyError(err) {
+				return nil, nil // already following due to race — idempotent
+			}
+			return nil, err
+		}
+		if err := s.userRepo.IncrementFollowersCount(sessCtx, followingID); err != nil {
+			return nil, fmt.Errorf("failed to increment followers count: %w", err)
+		}
+		if err := s.userRepo.IncrementFollowingCount(sessCtx, followerID); err != nil {
+			return nil, fmt.Errorf("failed to increment following count: %w", err)
+		}
+		return nil, nil
+	})
+	if err != nil {
+		return false, fmt.Errorf("follow transaction failed: %w", err)
+	}
+
+	// Notify the followed user (non-critical, async with timeout)
 	go func() {
+		nCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 		if s.notifService != nil {
-			follower, _ := s.userRepo.GetUserByID(context.Background(), followerID)
+			follower, _ := s.userRepo.GetUserByID(nCtx, followerID)
 			name := "Someone"
 			if follower != nil {
 				name = follower.DisplayName
 			}
-			_ = s.notifService.Send(context.Background(), models.SendNotificationRequest{
+			_ = s.notifService.Send(nCtx, models.SendNotificationRequest{
 				RecipientID:  followingID,
 				ActorID:      followerID,
 				Type:         models.NotifTypeFollowed,
@@ -97,6 +132,7 @@ func (s *service) ToggleFollow(ctx context.Context, followerIDStr, followingIDSt
 	}()
 	return true, nil
 }
+
 
 // GetPublicProfile returns a user's public profile with isFollowedByMe flag.
 func (s *service) GetPublicProfile(ctx context.Context, targetUserIDStr, callerIDStr string) (*models.PublicProfileResponse, error) {

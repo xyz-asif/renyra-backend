@@ -20,8 +20,6 @@ type Service interface {
 	GetUserByID(ctx context.Context, userID string) (*models.User, error)
 	GetUsersByIDs(ctx context.Context, userIDs []string) (map[string]*models.User, error)
 	UpdateProfile(ctx context.Context, userID string, updates map[string]interface{}) (*models.User, error)
-	FollowUser(ctx context.Context, followerID, followedUserID string) error
-	UnfollowUser(ctx context.Context, followerID, followedUserID string) error
 	SearchUsers(ctx context.Context, query string, limit, offset int) ([]models.User, error)
 	SearchUsersWithConnectionStatus(ctx context.Context, currentUserID, query string, limit, offset int) (*UserSearchResult, error)
 	GetFeed(ctx context.Context, userID string) ([]interface{}, error)
@@ -38,6 +36,7 @@ type service struct {
 type ConnectionRepository interface {
 	GetUserConnections(ctx context.Context, userID bson.ObjectID, status string) ([]models.Connection, error)
 	GetConnectionBetweenUsers(ctx context.Context, user1ID, user2ID bson.ObjectID) (*models.Connection, error)
+	GetConnectionsBetweenUserAndMany(ctx context.Context, userID bson.ObjectID, otherIDs []bson.ObjectID) (map[bson.ObjectID]*models.Connection, error)
 }
 
 type ChatRepository interface {
@@ -236,42 +235,7 @@ func (s *service) broadcastProfileUpdate(userID string, updates map[string]inter
 	}
 }
 
-// MVP Launch: User-to-User Follow System - Completed
-func (s *service) FollowUser(ctx context.Context, followerID, followedUserID string) error {
-	fID, err := bson.ObjectIDFromHex(followerID)
-	if err != nil {
-		return err
-	}
-	targetID, err := bson.ObjectIDFromHex(followedUserID)
-	if err != nil {
-		return err
-	}
 
-	if fID == targetID {
-		return errors.New("cannot follow yourself")
-	}
-
-	// Follow user
-	if err := s.repo.FollowUser(ctx, fID, targetID); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// MVP Launch: User-to-User Follow System - Completed
-func (s *service) UnfollowUser(ctx context.Context, followerID, followedUserID string) error {
-	fID, err := bson.ObjectIDFromHex(followerID)
-	if err != nil {
-		return err
-	}
-	targetID, err := bson.ObjectIDFromHex(followedUserID)
-	if err != nil {
-		return err
-	}
-
-	return s.repo.UnfollowUser(ctx, fID, targetID)
-}
 
 func (s *service) SearchUsers(ctx context.Context, query string, limit, offset int) ([]models.User, error) {
 	if limit <= 0 {
@@ -303,6 +267,7 @@ func (s *service) RegisterFCMToken(ctx context.Context, userID, token string) er
 	}
 	return s.repo.AddFCMToken(ctx, uid, token)
 }
+
 
 // UserWithConnection represents a user with their connection status to the current user
 type UserWithConnection struct {
@@ -357,6 +322,19 @@ func (s *service) SearchUsersWithConnectionStatus(ctx context.Context, currentUs
 		HasMore:    hasMore,
 	}
 
+	// Batch fetch connection status
+	otherIDs := make([]bson.ObjectID, 0, len(users))
+	for _, user := range users {
+		if user.ID != currentUserObjID {
+			otherIDs = append(otherIDs, user.ID)
+		}
+	}
+	connMap, err := s.connRepo.GetConnectionsBetweenUserAndMany(ctx, currentUserObjID, otherIDs)
+	if err != nil {
+		log.Printf("Error batch getting connection status: %v", err)
+		connMap = make(map[bson.ObjectID]*models.Connection)
+	}
+
 	for _, user := range users {
 		// Skip the current user
 		if user.ID == currentUserObjID {
@@ -368,12 +346,8 @@ func (s *service) SearchUsersWithConnectionStatus(ctx context.Context, currentUs
 			ConnectionStatus: "none",
 		}
 
-		// Check if there's a connection between current user and this user
-		conn, err := s.connRepo.GetConnectionBetweenUsers(ctx, currentUserObjID, user.ID)
-		if err != nil {
-			log.Printf("Error getting connection status for user %s: %v", user.ID.Hex(), err)
-			// Continue without connection info
-		} else if conn != nil {
+		// Check if there's a connection between current user and this user from batch map
+		if conn, ok := connMap[user.ID]; ok && conn != nil {
 			userWithConn.ConnectionStatus = conn.Status
 			userWithConn.ConnectionID = conn.ID.Hex()
 

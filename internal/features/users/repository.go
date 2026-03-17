@@ -3,6 +3,7 @@ package users
 import (
 	"context"
 	"errors"
+	"regexp"
 	"time"
 
 	"github.com/xyz-asif/gotodo/internal/models"
@@ -18,8 +19,6 @@ type Repository interface {
 	GetUsersByIDs(ctx context.Context, ids []bson.ObjectID) (map[bson.ObjectID]*models.User, error)
 	UpdateUser(ctx context.Context, id bson.ObjectID, updates map[string]interface{}) error // MVP Feature: User Profile Management
 	IncrementProfileViews(ctx context.Context, userID bson.ObjectID) error                  // MVP Feature: User Profile Management
-	FollowUser(ctx context.Context, followerID, followedID bson.ObjectID) error
-	UnfollowUser(ctx context.Context, followerID, followedID bson.ObjectID) error
 	IncrementFollowersCount(ctx context.Context, userID bson.ObjectID) error
 	DecrementFollowersCount(ctx context.Context, userID bson.ObjectID) error
 	IncrementFollowingCount(ctx context.Context, userID bson.ObjectID) error
@@ -33,18 +32,16 @@ type Repository interface {
 }
 
 type repository struct {
-	db          *mongo.Database
-	client      *mongo.Client // MVP Launch: Transaction support
-	collection  *mongo.Collection
-	followsColl *mongo.Collection
+	db         *mongo.Database
+	client     *mongo.Client // MVP Launch: Transaction support
+	collection *mongo.Collection
 }
 
 func NewRepository(db *mongo.Database) Repository {
 	return &repository{
-		db:          db,
-		client:      db.Client(), // MVP Launch: Transaction support
-		collection:  db.Collection("users"),
-		followsColl: db.Collection("follows"),
+		db:         db,
+		client:     db.Client(), // MVP Launch: Transaction support
+		collection: db.Collection("users"),
 	}
 }
 
@@ -101,104 +98,7 @@ func (r *repository) IncrementProfileViews(ctx context.Context, userID bson.Obje
 	return err
 }
 
-func (r *repository) GetFollowedUsers(ctx context.Context, userID bson.ObjectID) ([]bson.ObjectID, error) {
-	cursor, err := r.followsColl.Find(ctx, bson.M{"followerId": userID})
-	if err != nil {
-		return nil, err
-	}
-	defer cursor.Close(ctx)
 
-	var follows []models.Follow
-	if err := cursor.All(ctx, &follows); err != nil {
-		return nil, err
-	}
-
-	var followedIDs []bson.ObjectID
-	for _, f := range follows {
-		followedIDs = append(followedIDs, f.FollowingID)
-	}
-	return followedIDs, nil
-}
-
-// MVP Launch: User-to-User Follow System - Completed
-func (r *repository) FollowUser(ctx context.Context, followerID, followedUserID bson.ObjectID) error {
-	// Check if already following
-	count, err := r.followsColl.CountDocuments(ctx, bson.M{"followerId": followerID, "followingId": followedUserID})
-	if err != nil {
-		return err
-	}
-	if count > 0 {
-		return errors.New("already following")
-	}
-
-	// Execute in transaction
-	session, err := r.client.StartSession()
-	if err != nil {
-		return err
-	}
-	defer session.EndSession(ctx)
-
-	_, err = session.WithTransaction(ctx, func(sessCtx context.Context) (interface{}, error) {
-		// 1. Insert follow
-		follow := models.Follow{FollowerID: followerID, FollowingID: followedUserID, CreatedAt: time.Now()}
-		_, err := r.followsColl.InsertOne(sessCtx, follow)
-		if err != nil {
-			return nil, err
-		}
-
-		// 2. Increment follower's following count
-		_, err = r.collection.UpdateOne(sessCtx, bson.M{"_id": followerID}, bson.M{"$inc": bson.M{"followingCount": 1}})
-		if err != nil {
-			return nil, err
-		}
-
-		// 3. Increment followed user's followers count
-		_, err = r.collection.UpdateOne(sessCtx, bson.M{"_id": followedUserID}, bson.M{"$inc": bson.M{"followersCount": 1}})
-		if err != nil {
-			return nil, err
-		}
-
-		return nil, nil
-	})
-
-	return err
-}
-
-// MVP Launch: User-to-User Follow System - Completed
-func (r *repository) UnfollowUser(ctx context.Context, followerID, followedUserID bson.ObjectID) error {
-	session, err := r.client.StartSession()
-	if err != nil {
-		return err
-	}
-	defer session.EndSession(ctx)
-
-	_, err = session.WithTransaction(ctx, func(sessCtx context.Context) (interface{}, error) {
-		// 1. Delete follow
-		res, err := r.followsColl.DeleteOne(sessCtx, bson.M{"followerId": followerID, "followingId": followedUserID})
-		if err != nil {
-			return nil, err
-		}
-		if res.DeletedCount == 0 {
-			return nil, errors.New("not following")
-		}
-
-		// 2. Decrement follower's following count
-		_, err = r.collection.UpdateOne(sessCtx, bson.M{"_id": followerID}, bson.M{"$inc": bson.M{"followingCount": -1}})
-		if err != nil {
-			return nil, err
-		}
-
-		// 3. Decrement followed user's followers count
-		_, err = r.collection.UpdateOne(sessCtx, bson.M{"_id": followedUserID}, bson.M{"$inc": bson.M{"followersCount": -1}})
-		if err != nil {
-			return nil, err
-		}
-
-		return nil, nil
-	})
-
-	return err
-}
 
 func (r *repository) GetUserByUsername(ctx context.Context, username string) (*models.User, error) {
 	var user models.User
@@ -210,11 +110,12 @@ func (r *repository) GetUserByUsername(ctx context.Context, username string) (*m
 }
 
 func (r *repository) SearchUsers(ctx context.Context, query string, limit, offset int) ([]models.User, error) {
-	// Create a case-insensitive regex search on email or displayName
+	safeQuery := regexp.QuoteMeta(query)
+	// Create a case-insensitive regex search on displayName or username
 	filter := bson.M{
 		"$or": []bson.M{
-			{"displayName": bson.M{"$regex": query, "$options": "i"}},
-			{"email": bson.M{"$regex": query, "$options": "i"}},
+			{"displayName": bson.M{"$regex": safeQuery, "$options": "i"}},
+			{"username": bson.M{"$regex": safeQuery, "$options": "i"}},
 		},
 		"isActive": true, // Only return active users
 	}
@@ -264,12 +165,8 @@ func (r *repository) GetUsersByIDs(ctx context.Context, ids []bson.ObjectID) (ma
 	return userMap, nil
 }
 
-// AddFCMToken adds a token if not already present (idempotent).
+// AddFCMToken adds a token if not already present (idempotent $addToSet).
 func (r *repository) AddFCMToken(ctx context.Context, userID bson.ObjectID, token string) error {
-	_, _ = r.collection.UpdateOne(ctx,
-		bson.M{"_id": userID, "fcmTokens": nil},
-		bson.M{"$set": bson.M{"fcmTokens": []string{}}},
-	)
 	_, err := r.collection.UpdateOne(ctx,
 		bson.M{"_id": userID},
 		bson.M{"$addToSet": bson.M{"fcmTokens": token}},

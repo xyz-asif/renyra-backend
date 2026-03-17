@@ -77,8 +77,13 @@ func (s *service) TogglePoemLike(ctx context.Context, userIDStr, poemIDStr strin
 		if err := s.repo.UnlikePoem(ctx, userID, poemID); err != nil {
 			return false, 0, err
 		}
-		go func() { _ = s.repo.DecrementPoemLikes(context.Background(), poemID) }()
-		newCount := poem.LikesCount - 1
+		// Wait for decrement to finish to return accurate count
+		_ = s.repo.DecrementPoemLikes(ctx, poemID)
+		
+		var updated models.Poem
+		_ = s.poemsCol.FindOne(ctx, bson.M{"_id": poemID, "isDeleted": false}).Decode(&updated)
+		
+		newCount := updated.LikesCount
 		if newCount < 0 {
 			newCount = 0
 		}
@@ -92,17 +97,20 @@ func (s *service) TogglePoemLike(ctx context.Context, userIDStr, poemIDStr strin
 		return false, 0, err
 	}
 
-	go func() {
-		_ = s.repo.IncrementPoemLikes(context.Background(), poemID)
+	// Wait for increment to finish to return accurate count
+	_ = s.repo.IncrementPoemLikes(ctx, poemID)
 
+	go func() {
+		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 		// Notify poem author — but not if liking own poem
 		if poem.AuthorID != userID && s.notifService != nil {
-			liker, _ := s.userRepo.GetUserByID(context.Background(), userID)
+			liker, _ := s.userRepo.GetUserByID(bgCtx, userID)
 			name := "Someone"
 			if liker != nil {
 				name = liker.DisplayName
 			}
-			_ = s.notifService.Send(context.Background(), models.SendNotificationRequest{
+			_ = s.notifService.Send(bgCtx, models.SendNotificationRequest{
 				RecipientID:  poem.AuthorID,
 				ActorID:      userID,
 				Type:         models.NotifTypePoemLiked,
@@ -115,7 +123,10 @@ func (s *service) TogglePoemLike(ctx context.Context, userIDStr, poemIDStr strin
 		}
 	}()
 
-	return true, poem.LikesCount + 1, nil
+	var updated models.Poem
+	_ = s.poemsCol.FindOne(ctx, bson.M{"_id": poemID, "isDeleted": false}).Decode(&updated)
+
+	return true, updated.LikesCount, nil
 }
 
 func (s *service) GetPoemLikers(ctx context.Context, poemIDStr string, limit int, before string) ([]models.UserSearchResult, bool, error) {
@@ -213,9 +224,11 @@ func (s *service) AddComment(ctx context.Context, authorIDStr, poemIDStr, conten
 	}
 
 	go func() {
-		_ = s.repo.IncrementPoemComments(context.Background(), poemID)
+		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = s.repo.IncrementPoemComments(bgCtx, poemID)
 
-		commenter, _ := s.userRepo.GetUserByID(context.Background(), authorID)
+		commenter, _ := s.userRepo.GetUserByID(bgCtx, authorID)
 		name := "Someone"
 		if commenter != nil {
 			name = commenter.DisplayName
@@ -223,7 +236,7 @@ func (s *service) AddComment(ctx context.Context, authorIDStr, poemIDStr, conten
 
 		// Notify poem author (if not self-comment)
 		if poem.AuthorID != authorID && s.notifService != nil {
-			_ = s.notifService.Send(context.Background(), models.SendNotificationRequest{
+			_ = s.notifService.Send(bgCtx, models.SendNotificationRequest{
 				RecipientID:  poem.AuthorID,
 				ActorID:      authorID,
 				Type:         models.NotifTypeCommented,
@@ -236,7 +249,7 @@ func (s *service) AddComment(ctx context.Context, authorIDStr, poemIDStr, conten
 		}
 
 		// Detect @mentions and notify each mentioned user
-		s.processMentions(context.Background(), content, authorID, poemIDStr, comment.ID.Hex())
+		s.processMentions(bgCtx, content, authorID, poemIDStr, comment.ID.Hex())
 	}()
 
 	author, _ := s.userRepo.GetUserByID(ctx, authorID)
@@ -396,7 +409,11 @@ func (s *service) DeleteComment(ctx context.Context, authorIDStr, commentIDStr s
 		return err
 	}
 
-	go func() { _ = s.repo.DecrementPoemComments(context.Background(), comment.PoemID) }()
+	go func() {
+		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = s.repo.DecrementPoemComments(bgCtx, comment.PoemID)
+	}()
 	return nil
 }
 
@@ -424,10 +441,12 @@ func (s *service) ToggleCommentLike(ctx context.Context, userIDStr, commentIDStr
 		if err := s.repo.UnlikeComment(ctx, userID, commentID); err != nil {
 			return false, 0, err
 		}
-		go func() { _ = s.repo.DecrementCommentLikes(context.Background(), commentID) }()
-		newCount := comment.LikesCount - 1
-		if newCount < 0 {
-			newCount = 0
+		_ = s.repo.DecrementCommentLikes(ctx, commentID)
+		
+		updated, _ := s.repo.GetCommentByID(ctx, commentID)
+		newCount := 0
+		if updated != nil {
+			newCount = updated.LikesCount
 		}
 		return false, newCount, nil
 	}
@@ -439,17 +458,19 @@ func (s *service) ToggleCommentLike(ctx context.Context, userIDStr, commentIDStr
 		return false, 0, err
 	}
 
-	go func() {
-		_ = s.repo.IncrementCommentLikes(context.Background(), commentID)
+	_ = s.repo.IncrementCommentLikes(ctx, commentID)
 
+	go func() {
+		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 		// Notify comment author
 		if comment.AuthorID != userID && s.notifService != nil {
-			liker, _ := s.userRepo.GetUserByID(context.Background(), userID)
+			liker, _ := s.userRepo.GetUserByID(bgCtx, userID)
 			name := "Someone"
 			if liker != nil {
 				name = liker.DisplayName
 			}
-			_ = s.notifService.Send(context.Background(), models.SendNotificationRequest{
+			_ = s.notifService.Send(bgCtx, models.SendNotificationRequest{
 				RecipientID:  comment.AuthorID,
 				ActorID:      userID,
 				Type:         models.NotifTypeCommentLiked,
@@ -462,7 +483,13 @@ func (s *service) ToggleCommentLike(ctx context.Context, userIDStr, commentIDStr
 		}
 	}()
 
-	return true, comment.LikesCount + 1, nil
+	updated, _ := s.repo.GetCommentByID(ctx, commentID)
+	newCount := comment.LikesCount + 1
+	if updated != nil {
+		newCount = updated.LikesCount
+	}
+
+	return true, newCount, nil
 }
 
 // ── Reposts ──
@@ -506,8 +533,12 @@ func (s *service) ToggleRepost(ctx context.Context, userIDStr, poemIDStr string)
 		if err != nil {
 			return false, 0, err
 		}
-		go func() { _ = s.repo.DecrementPoemReposts(context.Background(), poemID) }()
-		newCount := original.RepostsCount - 1
+		_ = s.repo.DecrementPoemReposts(ctx, poemID)
+		
+		var updated models.Poem
+		_ = s.poemsCol.FindOne(ctx, bson.M{"_id": poemID, "isDeleted": false}).Decode(&updated)
+		
+		newCount := updated.RepostsCount
 		if newCount < 0 {
 			newCount = 0
 		}
@@ -534,18 +565,21 @@ func (s *service) ToggleRepost(ctx context.Context, userIDStr, poemIDStr string)
 	}
 	repost.ID = res.InsertedID.(bson.ObjectID)
 
+	_ = s.repo.IncrementPoemReposts(ctx, poemID)
+
 	go func() {
-		_ = s.repo.IncrementPoemReposts(context.Background(), poemID)
-		_ = s.userRepo.IncrementPostsCount(context.Background(), userID)
+		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = s.userRepo.IncrementPostsCount(bgCtx, userID)
 
 		// Notify original author
 		if s.notifService != nil {
-			reposter, _ := s.userRepo.GetUserByID(context.Background(), userID)
+			reposter, _ := s.userRepo.GetUserByID(bgCtx, userID)
 			name := "Someone"
 			if reposter != nil {
 				name = reposter.DisplayName
 			}
-			_ = s.notifService.Send(context.Background(), models.SendNotificationRequest{
+			_ = s.notifService.Send(bgCtx, models.SendNotificationRequest{
 				RecipientID:  original.AuthorID,
 				ActorID:      userID,
 				Type:         models.NotifTypeReposted,
@@ -558,7 +592,10 @@ func (s *service) ToggleRepost(ctx context.Context, userIDStr, poemIDStr string)
 		}
 	}()
 
-	return true, original.RepostsCount + 1, nil
+	var updated models.Poem
+	_ = s.poemsCol.FindOne(ctx, bson.M{"_id": poemID, "isDeleted": false}).Decode(&updated)
+
+	return true, updated.RepostsCount, nil
 }
 
 func (s *service) GetUserReposts(ctx context.Context, userIDStr string, limit int, before string) (*models.FeedPage, error) {

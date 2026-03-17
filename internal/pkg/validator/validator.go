@@ -7,10 +7,17 @@ import (
 )
 
 var (
-	emailRegex    = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
-	phoneRegex    = regexp.MustCompile(`^\+?[1-9]\d{1,14}$`)
-	usernameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]{3,20}$`)
-	urlRegex      = regexp.MustCompile(`^https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)$`)
+	emailRegex      = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+	phoneRegex      = regexp.MustCompile(`^\+?[1-9]\d{1,14}$`)
+	usernameRegex   = regexp.MustCompile(`^[a-zA-Z0-9_-]{3,20}$`)
+	urlRegex        = regexp.MustCompile(`^https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)$`)
+	nameRegex       = regexp.MustCompile(`^[a-zA-Z\s\-'\.]+$`)
+	postalRegex     = regexp.MustCompile(`^[A-Z0-9\s\-]{3,10}$`)
+	cardNumberRegex = regexp.MustCompile(`[\s\-]`)
+	uuidRegex       = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+	dateRegex       = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+	timeRegex       = regexp.MustCompile(`^\d{2}:\d{2}:\d{2}$`)
+	datetimeRegex   = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?$`)
 )
 
 // IsValidEmail checks if the email format is valid
@@ -80,7 +87,6 @@ func IsValidName(name string) bool {
 		return false
 	}
 
-	nameRegex := regexp.MustCompile(`^[a-zA-Z\s\-'\.]+$`)
 	return nameRegex.MatchString(name) && len(name) >= 2
 }
 
@@ -96,14 +102,13 @@ func IsValidPostalCode(postalCode string) bool {
 	}
 
 	// Basic check for common formats (can be enhanced for specific countries)
-	postalRegex := regexp.MustCompile(`^[A-Z0-9\s\-]{3,10}$`)
 	return postalRegex.MatchString(strings.ToUpper(postalCode))
 }
 
 // IsValidCreditCard checks if the credit card number passes Luhn algorithm
 func IsValidCreditCard(cardNumber string) bool {
 	// Remove spaces and dashes
-	cardNumber = regexp.MustCompile(`[\s\-]`).ReplaceAllString(cardNumber, "")
+	cardNumber = cardNumberRegex.ReplaceAllString(cardNumber, "")
 
 	if len(cardNumber) < 13 || len(cardNumber) > 19 {
 		return false
@@ -132,24 +137,20 @@ func IsValidCreditCard(cardNumber string) bool {
 
 // IsValidUUID checks if the string is a valid UUID
 func IsValidUUID(uuid string) bool {
-	uuidRegex := regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 	return uuidRegex.MatchString(strings.ToLower(uuid))
 }
 
 // IsValidDate checks if the date string is in YYYY-MM-DD format
 func IsValidDate(date string) bool {
-	dateRegex := regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 	return dateRegex.MatchString(date)
 }
 
 // IsValidTime checks if the time string is in HH:MM:SS format
 func IsValidTime(time string) bool {
-	timeRegex := regexp.MustCompile(`^\d{2}:\d{2}:\d{2}$`)
 	return timeRegex.MatchString(time)
 }
 
 // IsValidDateTime checks if the datetime string is in ISO format
 func IsValidDateTime(datetime string) bool {
-	datetimeRegex := regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z?$`)
 	return datetimeRegex.MatchString(datetime)
 }

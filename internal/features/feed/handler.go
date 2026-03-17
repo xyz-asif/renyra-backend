@@ -22,6 +22,9 @@ func (h *Handler) GetHomeFeed(c *fiber.Ctx) error {
 		return response.Unauthorized(c, "Unauthorized")
 	}
 	limit := c.QueryInt("limit", 20)
+	if limit > 50 {
+		limit = 50
+	}
 	before := c.Query("before")
 
 	page, err := h.service.GetHomeFeed(c.Context(), user.ID.Hex(), limit, before)
@@ -39,10 +42,16 @@ func (h *Handler) GetExploreFeed(c *fiber.Ctx) error {
 		callerID = user.ID.Hex()
 	}
 	limit := c.QueryInt("limit", 20)
+	if limit > 50 {
+		limit = 50
+	}
+	offset := c.QueryInt("offset", 0)
 	before := c.Query("before")
+	// Backward compatibility fallback: if offset=0 and before is present (Flutter app), treat as offset 0
+	_ = before // Ignore before for explore/scoring feeds since cursor doesn't work well there
 	hashtag := c.Query("hashtag")
 
-	page, err := h.service.GetExploreFeed(c.Context(), callerID, hashtag, limit, before)
+	page, err := h.service.GetExploreFeed(c.Context(), callerID, hashtag, limit, offset)
 	if err != nil {
 		return response.BadRequest(c, err.Error())
 	}
@@ -54,6 +63,9 @@ func (h *Handler) GetExploreFeed(c *fiber.Ctx) error {
 func (h *Handler) SearchPoems(c *fiber.Ctx) error {
 	query := c.Query("q")
 	limit := c.QueryInt("limit", 20)
+	if limit > 50 {
+		limit = 50
+	}
 	before := c.Query("before")
 
 	page, err := h.service.SearchPoems(c.Context(), query, limit, before)
@@ -72,6 +84,9 @@ func (h *Handler) SearchUsers(c *fiber.Ctx) error {
 	}
 	query := c.Query("q")
 	limit := c.QueryInt("limit", 20)
+	if limit > 50 {
+		limit = 50
+	}
 	offset := c.QueryInt("offset", 0)
 
 	page, err := h.service.SearchUsers(c.Context(), query, callerID, limit, offset)
@@ -85,8 +100,15 @@ func (h *Handler) SearchUsers(c *fiber.Ctx) error {
 // Auth optional.
 func (h *Handler) GetAudioFeed(c *fiber.Ctx) error {
 	limit := c.QueryInt("limit", 20)
+	if limit > 50 {
+		limit = 50
+	}
+	offset := c.QueryInt("offset", 0)
 	before := c.Query("before")
-	page, err := h.service.GetAudioFeed(c.Context(), limit, before)
+	// Backward compatibility fallback
+	_ = before
+
+	page, err := h.service.GetAudioFeed(c.Context(), limit, offset)
 	if err != nil {
 		return response.BadRequest(c, err.Error())
 	}

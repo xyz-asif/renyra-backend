@@ -60,6 +60,13 @@ func CreateIndexes(ctx context.Context, db *mongo.Database) error {
 		{Keys: bson.D{{Key: "participants", Value: 1}, {Key: "lastUpdated", Value: -1}}},
 		// Fast lookup: find existing direct room between two people
 		{Keys: bson.D{{Key: "type", Value: 1}, {Key: "participants", Value: 1}}},
+		// Enforce unique direct rooms between the same participants
+		{
+			Keys: bson.D{{Key: "type", Value: 1}, {Key: "participants", Value: 1}},
+			Options: options.Index().SetUnique(true).SetPartialFilterExpression(bson.M{
+				"type": "direct",
+			}),
+		},
 		// Index for searching rooms by participant IDs (for $in queries)
 		{Keys: bson.D{{Key: "participants", Value: 1}}},
 	}

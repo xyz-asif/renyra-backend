@@ -50,54 +50,15 @@ func (h *Handler) UpdateProfile(c *fiber.Ctx) error {
 	return response.OK(c, "Profile updated successfully", updatedUser)
 }
 
-// FollowUser allows a user to follow another user
-func (h *Handler) FollowUser(c *fiber.Ctx) error {
-	targetUserID := c.Params("id")
-	user, ok := c.Locals("user").(*models.User)
-	if !ok {
-		return response.Unauthorized(c, "Unauthorized")
-	}
 
-	if err := h.service.FollowUser(c.Context(), user.ID.Hex(), targetUserID); err != nil {
-		// Check error type and return appropriate status code
-		if pkgErrors.IsConflict(err) {
-			return response.Conflict(c, err.Error())
-		}
-		if pkgErrors.IsNotFound(err) {
-			return response.NotFound(c, err.Error())
-		}
-		if pkgErrors.IsValidation(err) {
-			return response.BadRequest(c, err.Error())
-		}
-		return response.InternalError(c, err.Error())
-	}
-
-	return response.OK(c, "Successfully followed user", nil)
-}
-
-// UnfollowUser allows a user to unfollow another user
-func (h *Handler) UnfollowUser(c *fiber.Ctx) error {
-	currentUser, ok := c.Locals("user").(*models.User)
-	if !ok {
-		return response.Unauthorized(c, "Unauthorized")
-	}
-
-	targetID := c.Params("id")
-	if err := h.service.UnfollowUser(c.Context(), currentUser.ID.Hex(), targetID); err != nil {
-		// Check error type and return appropriate status code
-		if pkgErrors.IsNotFound(err) {
-			return response.NotFound(c, err.Error())
-		}
-		return response.InternalError(c, err.Error())
-	}
-
-	return response.OK(c, "Unfollowed successfully", nil)
-}
 
 // Search Users
 func (h *Handler) Search(c *fiber.Ctx) error {
 	query := c.Query("q", "")
 	limit := c.QueryInt("limit", 20)
+	if limit > 50 {
+		limit = 50
+	}
 	offset := c.QueryInt("offset", 0)
 
 	users, err := h.service.SearchUsers(c.Context(), query, limit, offset)
@@ -119,6 +80,9 @@ func (h *Handler) SearchWithConnectionStatus(c *fiber.Ctx) error {
 
 	query := c.Query("q", "") // Empty query returns all users
 	limit := c.QueryInt("limit", 20)
+	if limit > 50 {
+		limit = 50
+	}
 	offset := c.QueryInt("offset", 0)
 
 	result, err := h.service.SearchUsersWithConnectionStatus(c.Context(), user.ID.Hex(), query, limit, offset)

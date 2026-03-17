@@ -80,7 +80,6 @@ func (h *Hub) Run() {
 				h.clients[client.userID] = make(map[*clientContext]bool)
 			}
 			h.clients[client.userID][client] = true
-			connCount := len(h.clients[client.userID])
 			h.clientsMu.Unlock()
 			
 			// Cancel grace period if user reconnected
@@ -88,11 +87,9 @@ func (h *Hub) Run() {
 			
 			// Start the dedicated writer for this connection
 			go h.writePump(client)
-			log.Printf("[HUB] User %s registered (connections: %d, wasOffline: %v)", client.userID, connCount, wasOffline)
 			
 			// Trigger online callback if this was the first connection
 			if wasOffline && h.onUserOnline != nil {
-				log.Printf("[HUB] Triggering online callback for user %s", client.userID)
 				h.onUserOnline(client.userID)
 			}
 
@@ -113,12 +110,10 @@ func (h *Hub) Run() {
 
 						// Skip grace period if user was manually marked offline
 						if wasManuallyOffline {
-							log.Printf("[HUB] User %s was manually offline, no grace period", client.userID)
 							if h.onUserOffline != nil {
 								h.onUserOffline(client.userID)
 							}
 						} else {
-							log.Printf("[HUB] Starting grace period for user %s", client.userID)
 							h.startGracePeriod(client.userID)
 						}
 					}
@@ -205,7 +200,6 @@ func (h *Hub) startGracePeriod(userID string) {
 		// User manually went offline - broadcast immediately with no grace period
 		h.graceMu.Unlock()
 		if h.onUserOffline != nil {
-			log.Printf("[HUB] User %s manually offline, broadcasting immediately", userID)
 			h.onUserOffline(userID)
 		}
 		return
@@ -241,7 +235,6 @@ func (h *Hub) CancelGracePeriod(userID string) {
 	if timer, ok := h.gracePeriods[userID]; ok {
 		timer.Stop()
 		delete(h.gracePeriods, userID)
-		log.Printf("User %s grace period cancelled", userID)
 	}
 	h.graceMu.Unlock()
 }

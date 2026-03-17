@@ -1,8 +1,13 @@
 package routes
 
 import (
+	"context"
+	"time"
+
 	"github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
+	"github.com/gofiber/fiber/v2/middleware/timeout"
 	"github.com/xyz-asif/gotodo/internal/features/chat"
 	"github.com/xyz-asif/gotodo/internal/features/connections"
 	"github.com/xyz-asif/gotodo/internal/features/feed"
@@ -13,6 +18,8 @@ import (
 	"github.com/xyz-asif/gotodo/internal/features/social"
 	"github.com/xyz-asif/gotodo/internal/features/users"
 	"github.com/xyz-asif/gotodo/internal/middleware"
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
 func SetupRoutes(
@@ -27,12 +34,49 @@ func SetupRoutes(
 	followHandler *follows.Handler,
 	feedHandler *feed.Handler,
 	socialHandler *social.Handler,
+	db *mongo.Database,
 ) {
+	// API v1 group with global 10-second timeout
 	api := app.Group("/api/v1")
+	api.Use(timeout.NewWithContext(func(c *fiber.Ctx) error {
+		return c.Next()
+	}, 10*time.Second))
 
-	// Health check
+	// Rate limiter: 100 requests per minute per IP
+	api.Use(limiter.New(limiter.Config{
+		Max:        100,
+		Expiration: 1 * time.Minute,
+		LimitReached: func(c *fiber.Ctx) error {
+			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
+				"error": "rate limit exceeded, please try again later",
+			})
+		},
+	}))
+
+	// Strict rate limiter for write endpoints (10 req/min per IP)
+	strictRateLimit := limiter.New(limiter.Config{
+		Max:        10,
+		Expiration: 1 * time.Minute,
+		LimitReached: func(c *fiber.Ctx) error {
+			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
+				"error": "too many requests, slow down",
+			})
+		},
+	})
+
+	// Health check with MongoDB ping
 	api.Get("/health", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{"status": "ok"})
+		healthCtx, cancel := context.WithTimeout(c.Context(), 2*time.Second)
+		defer cancel()
+		var result bson.M
+		err := db.RunCommand(healthCtx, bson.D{{Key: "ping", Value: 1}}).Decode(&result)
+		if err != nil {
+			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+				"status":  "unhealthy",
+				"mongodb": "disconnected",
+			})
+		}
+		return c.JSON(fiber.Map{"status": "ok", "mongodb": "connected"})
 	})
 
 	// ── User Routes ──
@@ -60,7 +104,7 @@ func SetupRoutes(
 	chatGroup.Get("/rooms", authMiddleware.VerifyToken, chatHandler.GetUserRooms)
 	chatGroup.Post("/rooms/direct/:id", authMiddleware.VerifyToken, chatHandler.GetOrCreateDirectRoom)
 	chatGroup.Get("/rooms/:roomId/messages", authMiddleware.VerifyToken, chatHandler.GetRoomMessages)
-	chatGroup.Post("/rooms/:roomId/messages", authMiddleware.VerifyToken, chatHandler.SendMessage)
+	chatGroup.Post("/rooms/:roomId/messages", authMiddleware.VerifyToken, strictRateLimit, chatHandler.SendMessage)
 	chatGroup.Post("/rooms/:roomId/read", authMiddleware.VerifyToken, chatHandler.MarkRoomAsRead)
 	chatGroup.Delete("/rooms/:roomId", authMiddleware.VerifyToken, chatHandler.DeleteChat)
 
@@ -99,23 +143,23 @@ func SetupRoutes(
 	poemRoutes.Delete("/:id", authMiddleware.Protect(), poemHandler.DeletePoem)
 
 	// ── Follow / Profile ──
-	api.Post("/users/:id/follow", authMiddleware.Protect(), followHandler.ToggleFollow)
+	api.Post("/users/:id/follow", authMiddleware.Protect(), strictRateLimit, followHandler.ToggleFollow)
 	api.Get("/users/:id/profile", authMiddleware.OptionalAuth(), followHandler.GetPublicProfile)
 	api.Get("/users/:id/followers", authMiddleware.OptionalAuth(), followHandler.GetFollowers)
 	api.Get("/users/:id/following", authMiddleware.OptionalAuth(), followHandler.GetFollowing)
 
 	// ── Social: Poem Likes ──
-	api.Post("/poems/:id/like", authMiddleware.Protect(), socialHandler.TogglePoemLike)
+	api.Post("/poems/:id/like", authMiddleware.Protect(), strictRateLimit, socialHandler.TogglePoemLike)
 	api.Get("/poems/:id/likes", authMiddleware.OptionalAuth(), socialHandler.GetPoemLikers)
 
 	// ── Social: Comments ──
-	api.Post("/poems/:id/comments", authMiddleware.Protect(), socialHandler.AddComment)
+	api.Post("/poems/:id/comments", authMiddleware.Protect(), strictRateLimit, socialHandler.AddComment)
 	api.Get("/poems/:id/comments", authMiddleware.OptionalAuth(), socialHandler.GetComments)
 	api.Delete("/comments/:id", authMiddleware.Protect(), socialHandler.DeleteComment)
-	api.Post("/comments/:id/like", authMiddleware.Protect(), socialHandler.ToggleCommentLike)
+	api.Post("/comments/:id/like", authMiddleware.Protect(), strictRateLimit, socialHandler.ToggleCommentLike)
 
 	// ── Social: Reposts ──
-	api.Post("/poems/:id/repost", authMiddleware.Protect(), socialHandler.ToggleRepost)
+	api.Post("/poems/:id/repost", authMiddleware.Protect(), strictRateLimit, socialHandler.ToggleRepost)
 	api.Get("/users/:id/reposts", authMiddleware.OptionalAuth(), socialHandler.GetUserReposts)
 
 	// ── Feed ──

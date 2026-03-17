@@ -75,6 +75,9 @@ func (h *Handler) GetUserRooms(c *fiber.Ctx) error {
 	// Parse query parameters
 	searchQuery := c.Query("q", "")
 	limit := c.QueryInt("limit", 20)
+	if limit > 50 {
+		limit = 50
+	}
 	offset := c.QueryInt("offset", 0)
 
 	// Cap limit to prevent abuse
@@ -88,34 +91,18 @@ func (h *Handler) GetUserRooms(c *fiber.Ctx) error {
 		offset = 0
 	}
 
-	// Use new method with search/pagination if query params provided
-	if searchQuery != "" || offset > 0 {
-		rooms, totalCount, hasMore, err := h.service.GetUserRoomsWithSearch(c.Context(), user.ID.Hex(), searchQuery, limit, offset)
-		if err != nil {
-			return response.InternalError(c, err.Error())
-		}
-
-		return response.OK(c, "Rooms retrieved", fiber.Map{
-			"rooms":      rooms,
-			"totalCount": totalCount,
-			"hasMore":    hasMore,
-			"limit":      limit,
-			"offset":     offset,
-		})
-	}
-
-	// Fall back to original method for backward compatibility
-	rooms, err := h.service.GetUserRooms(c.Context(), user.ID.Hex())
+	// Always use GetUserRoomsWithSearch — it's paginated, bounded, and supports search
+	rooms, totalCount, hasMore, err := h.service.GetUserRoomsWithSearch(c.Context(), user.ID.Hex(), searchQuery, limit, offset)
 	if err != nil {
 		return response.InternalError(c, err.Error())
 	}
 
 	return response.OK(c, "Rooms retrieved", fiber.Map{
 		"rooms":      rooms,
-		"totalCount": len(rooms),
-		"hasMore":    false,
-		"limit":      len(rooms),
-		"offset":     0,
+		"totalCount": totalCount,
+		"hasMore":    hasMore,
+		"limit":      limit,
+		"offset":     offset,
 	})
 }
 
@@ -131,6 +118,9 @@ func (h *Handler) GetRoomMessages(c *fiber.Ctx) error {
 
 	roomID := c.Params("roomId")
 	limit := c.QueryInt("limit", 50)
+	if limit > 50 {
+		limit = 50
+	}
 	before := c.Query("before") // cursor: ObjectID hex of the oldest message currently shown
 
 	page, err := h.service.GetRoomMessages(c.Context(), user.ID.Hex(), roomID, limit, before)

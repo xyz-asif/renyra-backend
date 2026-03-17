@@ -7,7 +7,6 @@ import (
 
 	firebase "firebase.google.com/go/v4"
 	"firebase.google.com/go/v4/messaging"
-	"google.golang.org/api/option"
 )
 
 // FirebaseFCM implements FCMSender using Firebase Admin SDK
@@ -15,27 +14,14 @@ type FirebaseFCM struct {
 	client *messaging.Client
 }
 
-// NewFirebaseFCM creates an FCM sender. Returns nil (not an error) if
-// credentials are missing — the notification service handles nil gracefully
-// by skipping push notifications.
-func NewFirebaseFCM(credPath, projectID string) *FirebaseFCM {
-	if credPath == "" && projectID == "" {
-		log.Println("FCM: No credentials configured, push notifications disabled")
+// NewFirebaseFCM creates an FCM sender using a shared Firebase app instance.
+func NewFirebaseFCM(app *firebase.App) *FirebaseFCM {
+	if app == nil {
+		log.Println("FCM: No Firebase App provided, push notifications disabled")
 		return nil
 	}
 
 	ctx := context.Background()
-	var opts []option.ClientOption
-	if credPath != "" {
-		opts = append(opts, option.WithCredentialsFile(credPath))
-	}
-
-	app, err := firebase.NewApp(ctx, &firebase.Config{ProjectID: projectID}, opts...)
-	if err != nil {
-		log.Printf("FCM: Failed to init Firebase app: %v", err)
-		return nil
-	}
-
 	client, err := app.Messaging(ctx)
 	if err != nil {
 		log.Printf("FCM: Failed to init messaging client: %v", err)

@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"log"
+	"regexp"
 	"time"
 
 	"github.com/xyz-asif/gotodo/internal/models"
@@ -22,6 +23,8 @@ type Repository interface {
 	// limit: max rooms to return (capped at 50)
 	// offset: number of rooms to skip for pagination
 	GetUserRoomsWithSearch(ctx context.Context, userID bson.ObjectID, searchQuery string, limit, offset int) ([]models.Room, int64, error)
+	// SearchRooms returns paginated rooms for a user, searching by room name.
+	SearchRooms(ctx context.Context, userID bson.ObjectID, query string, limit, offset int) ([]models.Room, int64, error)
 
 	SaveMessage(ctx context.Context, msg *models.Message) error
 	GetMessageByID(ctx context.Context, messageID bson.ObjectID) (*models.Message, error)
@@ -127,9 +130,16 @@ func (r *repository) GetOrCreateDirectRoomAtomic(ctx context.Context, user1ID, u
 
 	// Create a new direct room if it doesn't exist
 	now := time.Now()
+
+	// Sort participants to ensure the unique index works flawlessly (array order matters)
+	p1, p2 := user1ID, user2ID
+	if p1.Hex() > p2.Hex() {
+		p1, p2 = p2, p1
+	}
+
 	newRoom := &models.Room{
 		Type:         models.RoomTypeDirect,
-		Participants: []bson.ObjectID{user1ID, user2ID},
+		Participants: []bson.ObjectID{p1, p2},
 		UnreadCounts: map[string]int{
 			user1ID.Hex(): 0,
 			user2ID.Hex(): 0,
@@ -166,9 +176,61 @@ func (r *repository) GetOrCreateDirectRoomAtomic(ctx context.Context, user1ID, u
 	return createdRoom, nil
 }
 
+// SearchRooms returns paginated rooms for a user, searching by room name.
+func (r *repository) SearchRooms(ctx context.Context, userID bson.ObjectID, query string, limit, offset int) ([]models.Room, int64, error) {
+	// Validate and cap limit
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 50 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	// Escape special regex characters in the query
+	safeQuery := regexp.QuoteMeta(query)
+
+	filter := bson.M{
+		"participants": userID,
+		"name":         bson.M{"$regex": safeQuery, "$options": "i"},
+	}
+
+	// Get total count for pagination metadata
+	totalCount, err := r.rooms.CountDocuments(ctx, filter)
+	if err != nil {
+		log.Printf("[REPO] Error counting rooms for search: %v", err)
+		totalCount = 0
+	}
+
+	opts := options.Find().
+		SetSort(bson.D{{Key: "lastUpdated", Value: -1}}).
+		SetLimit(int64(limit)).
+		SetSkip(int64(offset))
+
+	cursor, err := r.rooms.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer cursor.Close(ctx)
+
+	var rooms []models.Room
+	if err = cursor.All(ctx, &rooms); err != nil {
+		return nil, 0, err
+	}
+
+	log.Printf("[REPO] SearchRooms: user=%s, query=%q, limit=%d, offset=%d, found=%d, total=%d",
+		userID.Hex(), query, limit, offset, len(rooms), totalCount)
+
+	return rooms, totalCount, nil
+}
+
 func (r *repository) GetUserRooms(ctx context.Context, userID bson.ObjectID) ([]models.Room, error) {
 	filter := bson.M{"participants": userID}
-	opts := options.Find().SetSort(bson.D{{Key: "lastUpdated", Value: -1}})
+	opts := options.Find().
+		SetSort(bson.D{{Key: "lastUpdated", Value: -1}}).
+		SetLimit(50)
 
 	cursor, err := r.rooms.Find(ctx, filter, opts)
 	if err != nil {
@@ -206,11 +268,13 @@ func (r *repository) GetUserRoomsWithSearch(ctx context.Context, userID bson.Obj
 
 	// If search query provided, we need to find matching users first
 	if searchQuery != "" && searchQuery != "*" {
+		safeQuery := regexp.QuoteMeta(searchQuery)
+
 		// Search for users whose display name matches the query
 		// We'll do a case-insensitive regex search
 		userFilter := bson.M{
 			"displayName": bson.M{
-				"$regex":   searchQuery,
+				"$regex":   safeQuery,
 				"$options": "i",
 			},
 		}
@@ -244,7 +308,7 @@ func (r *repository) GetUserRoomsWithSearch(ctx context.Context, userID bson.Obj
 			// Condition 1: Room name matches search (for groups)
 			orConditions = append(orConditions, bson.M{
 				"name": bson.M{
-					"$regex":   searchQuery,
+					"$regex":   safeQuery,
 					"$options": "i",
 				},
 			})

@@ -10,7 +10,6 @@ import (
 	"github.com/xyz-asif/gotodo/internal/features/users"
 	"github.com/xyz-asif/gotodo/internal/models"
 	"github.com/xyz-asif/gotodo/pkg/response"
-	"google.golang.org/api/option"
 )
 
 type AuthMiddleware struct {
@@ -18,19 +17,9 @@ type AuthMiddleware struct {
 	userService users.Service
 }
 
-func NewAuthMiddleware(credPath, projectID string, userService users.Service) (*AuthMiddleware, error) {
-	ctx := context.Background()
-	opts := []option.ClientOption{}
-
-	if credPath != "" {
-		opts = append(opts, option.WithCredentialsFile(credPath))
-	}
-
-	config := &firebase.Config{ProjectID: projectID}
-
-	app, err := firebase.NewApp(ctx, config, opts...)
-	if err != nil {
-		return nil, err
+func NewAuthMiddleware(app *firebase.App, userService users.Service) (*AuthMiddleware, error) {
+	if app == nil {
+		return nil, fiber.NewError(500, "firebase app is required")
 	}
 
 	return &AuthMiddleware{

@@ -14,6 +14,7 @@ type Repository interface {
 	CreateConnection(ctx context.Context, conn *models.Connection) error
 	GetConnectionByID(ctx context.Context, id bson.ObjectID) (*models.Connection, error)
 	GetConnectionBetweenUsers(ctx context.Context, user1ID, user2ID bson.ObjectID) (*models.Connection, error)
+	GetConnectionsBetweenUserAndMany(ctx context.Context, userID bson.ObjectID, otherIDs []bson.ObjectID) (map[bson.ObjectID]*models.Connection, error)
 	UpdateConnectionStatus(ctx context.Context, id bson.ObjectID, status string) error
 	UpdateConnectionDirection(ctx context.Context, id bson.ObjectID, newSenderID, newReceiverID bson.ObjectID) error
 	DeleteConnection(ctx context.Context, id bson.ObjectID) error
@@ -74,6 +75,44 @@ func (r *repository) GetConnectionBetweenUsers(ctx context.Context, user1ID, use
 		return nil, err
 	}
 	return &conn, nil
+}
+
+// GetConnectionsBetweenUserAndMany batch-fetches connections between userID and each of otherIDs.
+// Returns a map keyed by the OTHER user's ID.
+func (r *repository) GetConnectionsBetweenUserAndMany(ctx context.Context, userID bson.ObjectID, otherIDs []bson.ObjectID) (map[bson.ObjectID]*models.Connection, error) {
+	result := make(map[bson.ObjectID]*models.Connection, len(otherIDs))
+	if len(otherIDs) == 0 {
+		return result, nil
+	}
+
+	filter := bson.M{
+		"$or": []bson.M{
+			{"senderId": userID, "receiverId": bson.M{"$in": otherIDs}},
+			{"receiverId": userID, "senderId": bson.M{"$in": otherIDs}},
+		},
+	}
+
+	cursor, err := r.collection.Find(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var conns []models.Connection
+	if err := cursor.All(ctx, &conns); err != nil {
+		return nil, err
+	}
+
+	for i := range conns {
+		c := &conns[i]
+		if c.SenderID == userID {
+			result[c.ReceiverID] = c
+		} else {
+			result[c.SenderID] = c
+		}
+	}
+
+	return result, nil
 }
 
 func (r *repository) UpdateConnectionStatus(ctx context.Context, id bson.ObjectID, status string) error {

@@ -85,7 +85,7 @@ func (s *service) GetOrCreateDirectRoom(ctx context.Context, user1IDStr, user2ID
 		return nil, err
 	}
 
-	return s.buildRoomResponse(ctx, room, user1IDStr)
+	return s.buildRoomResponse(ctx, room, user1IDStr, nil)
 }
 
 func (s *service) SendMessage(ctx context.Context, senderIDStr, roomIDStr, content, msgType string, metadata *models.MediaMetadata, replyToIDStr string) (*models.MessageResponse, error) {
@@ -157,7 +157,7 @@ func (s *service) SendMessage(ctx context.Context, senderIDStr, roomIDStr, conte
 		log.Printf("SendMessage: failed to increment unread counts for room %s: %v", roomIDStr, err)
 	}
 
-	resp := s.buildMessageResponse(ctx, msg)
+	resp := s.buildMessageResponse(ctx, msg, nil)
 
 	userIDs := make([]string, len(room.Participants))
 	for i, p := range room.Participants {
@@ -260,9 +260,29 @@ func (s *service) GetRoomMessages(ctx context.Context, userIDStr, roomIDStr stri
 		msgs = msgs[:limit]
 	}
 
+	// Batch fetch all unique user IDs (senders + reply senders)
+	userIDSet := make(map[bson.ObjectID]bool)
+	for _, m := range msgs {
+		userIDSet[m.SenderID] = true
+		if m.ReplyToID != nil {
+			if replyMsg, err := s.repo.GetMessageByID(ctx, *m.ReplyToID); err == nil {
+				userIDSet[replyMsg.SenderID] = true
+			}
+		}
+	}
+	userIDs := make([]bson.ObjectID, 0, len(userIDSet))
+	for id := range userIDSet {
+		userIDs = append(userIDs, id)
+	}
+	userMap, err := s.userRepo.GetUsersByIDs(ctx, userIDs)
+	if err != nil {
+		log.Printf("GetRoomMessages: failed to batch fetch users: %v", err)
+		userMap = make(map[bson.ObjectID]*models.User)
+	}
+
 	responses := make([]models.MessageResponse, 0, len(msgs))
 	for _, m := range msgs {
-		responses = append(responses, *s.buildMessageResponse(ctx, &m))
+		responses = append(responses, *s.buildMessageResponse(ctx, &m, userMap))
 	}
 
 	// Reverse from newest-first (DB order) to chronological for the client
@@ -316,10 +336,10 @@ func (s *service) GetUserRooms(ctx context.Context, userIDStr string) ([]models.
 		result[objID.Hex()] = user
 	}
 
-	// Build responses using cached user map
+	// Build responses with the preloaded map
 	responses := make([]models.RoomResponse, 0, len(rooms))
 	for _, r := range rooms {
-		resp, err := s.buildRoomResponse(ctx, &r, userIDStr)
+		resp, err := s.buildRoomResponse(ctx, &r, userIDStr, userMap)
 		if err != nil {
 			log.Printf("GetUserRooms: failed to build room response for room %s: %v", r.ID.Hex(), err)
 			continue
@@ -366,10 +386,30 @@ func (s *service) GetUserRoomsWithSearch(ctx context.Context, userIDStr, searchQ
 		return []models.RoomResponse{}, totalCount, hasMore, nil
 	}
 
-	// Build responses using buildRoomResponse (handles user fetching internally)
+	// Batch fetch all users referenced in these rooms
+	userIDSet := make(map[bson.ObjectID]bool)
+	for _, r := range rooms {
+		for _, p := range r.Participants {
+			userIDSet[p] = true
+		}
+		if r.LastMessageSenderID != nil {
+			userIDSet[*r.LastMessageSenderID] = true
+		}
+	}
+	userIDs := make([]bson.ObjectID, 0, len(userIDSet))
+	for id := range userIDSet {
+		userIDs = append(userIDs, id)
+	}
+	userMap, err := s.userRepo.GetUsersByIDs(ctx, userIDs)
+	if err != nil {
+		log.Printf("[SERVICE] Failed to batch fetch users: %v", err)
+		userMap = make(map[bson.ObjectID]*models.User)
+	}
+
+	// Build responses using preloaded user map
 	responses := make([]models.RoomResponse, 0, len(rooms))
 	for _, r := range rooms {
-		resp, err := s.buildRoomResponse(ctx, &r, userIDStr)
+		resp, err := s.buildRoomResponse(ctx, &r, userIDStr, userMap)
 		if err != nil {
 			log.Printf("[SERVICE] GetUserRoomsWithSearch: failed to build room response for room %s: %v", r.ID.Hex(), err)
 			continue
@@ -874,14 +914,12 @@ func (s *service) HandleWebSocket(c *websocket.Conn, userID string) {
 		send:   make(chan []byte, sendBufSize),
 	}
 
-	log.Printf("[WS] Registering client for user %s", userID)
 	s.hub.register <- client
 
 	// Send welcome message so client knows connection is established
 	welcomeMsg, _ := json.Marshal(map[string]string{"type": "connected"})
 	select {
 	case client.send <- welcomeMsg:
-		log.Printf("[WS] Sent welcome message to user %s", userID)
 	default:
 		log.Printf("[WS ERROR] Failed to send welcome message to user %s (buffer full)", userID)
 	}
@@ -892,7 +930,6 @@ func (s *service) HandleWebSocket(c *websocket.Conn, userID string) {
 
 	defer func() {
 		close(stopPingPump)
-		log.Printf("[WS] Unregistering client for user %s", userID)
 		s.hub.unregister <- client
 	}()
 
@@ -931,7 +968,6 @@ func (s *service) HandleWebSocket(c *websocket.Conn, userID string) {
 		case "pong":
 			// Client responded to our ping - update last pong time
 			lastPongTime = time.Now()
-			log.Printf("[WS] Pong received from user %s", userID)
 
 		case "ping":
 			// Client sent ping, respond with pong (legacy support)
@@ -1011,7 +1047,7 @@ func isUserInRoom(room *models.Room, userID bson.ObjectID) bool {
 	return false
 }
 
-func (s *service) buildRoomResponse(ctx context.Context, room *models.Room, forUserID string) (*models.RoomResponse, error) {
+func (s *service) buildRoomResponse(ctx context.Context, room *models.Room, forUserID string, userMap map[bson.ObjectID]*models.User) (*models.RoomResponse, error) {
 	resp := &models.RoomResponse{
 		ID:              room.ID.Hex(),
 		Type:            room.Type,
@@ -1027,17 +1063,30 @@ func (s *service) buildRoomResponse(ctx context.Context, room *models.Room, forU
 		resp.UnreadCount = room.UnreadCounts[forUserID]
 	}
 
+	// Helper to get user from map or DB as fallback
+	getUser := func(id bson.ObjectID) *models.User {
+		if userMap != nil {
+			if u, ok := userMap[id]; ok {
+				return u
+			}
+		}
+		u, err := s.userRepo.GetUserByID(ctx, id)
+		if err != nil {
+			return nil
+		}
+		return u
+	}
+
 	// Resolve last message sender name
 	if room.LastMessageSenderID != nil {
-		if sender, err := s.userRepo.GetUserByID(ctx, *room.LastMessageSenderID); err == nil {
+		if sender := getUser(*room.LastMessageSenderID); sender != nil {
 			resp.LastMessageSenderName = sender.DisplayName
 		}
 	}
 
 	// Build participant info with online status
 	for _, p := range room.Participants {
-		user, err := s.userRepo.GetUserByID(ctx, p)
-		if err == nil && user != nil {
+		if user := getUser(p); user != nil {
 			resp.Participants = append(resp.Participants, models.ParticipantInfo{
 				ID:          user.ID.Hex(),
 				DisplayName: user.DisplayName,
@@ -1051,7 +1100,7 @@ func (s *service) buildRoomResponse(ctx context.Context, room *models.Room, forU
 	return resp, nil
 }
 
-func (s *service) buildMessageResponse(ctx context.Context, msg *models.Message) *models.MessageResponse {
+func (s *service) buildMessageResponse(ctx context.Context, msg *models.Message, userMap map[bson.ObjectID]*models.User) *models.MessageResponse {
 	resp := &models.MessageResponse{
 		ID:        msg.ID.Hex(),
 		RoomID:    msg.RoomID.Hex(),
@@ -1071,8 +1120,19 @@ func (s *service) buildMessageResponse(ctx context.Context, msg *models.Message)
 		resp.Type = models.MessageTypeText
 	}
 
+	// Helper to get user from map or DB as fallback
+	getUser := func(id bson.ObjectID) *models.User {
+		if userMap != nil {
+			if u, ok := userMap[id]; ok {
+				return u
+			}
+		}
+		u, _ := s.userRepo.GetUserByID(ctx, id)
+		return u
+	}
+
 	// Populate sender display info so frontend does not need a separate user lookup
-	if sender, err := s.userRepo.GetUserByID(ctx, msg.SenderID); err == nil && sender != nil {
+	if sender := getUser(msg.SenderID); sender != nil {
 		resp.SenderName = sender.DisplayName
 		resp.SenderPhotoURL = sender.PhotoURL
 	}
@@ -1094,7 +1154,7 @@ func (s *service) buildMessageResponse(ctx context.Context, msg *models.Message)
 			if replyResp.Type == "" {
 				replyResp.Type = models.MessageTypeText
 			}
-			if replySender, err := s.userRepo.GetUserByID(ctx, replyMsg.SenderID); err == nil && replySender != nil {
+			if replySender := getUser(replyMsg.SenderID); replySender != nil {
 				replyResp.SenderName = replySender.DisplayName
 				replyResp.SenderPhotoURL = replySender.PhotoURL
 			}

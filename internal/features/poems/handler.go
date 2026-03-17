@@ -96,6 +96,9 @@ func (h *Handler) GetMyPoems(c *fiber.Ctx) error {
 	}
 
 	limit := c.QueryInt("limit", 20)
+	if limit > 50 {
+		limit = 50
+	}
 	before := c.Query("before")
 
 	page, err := h.service.GetMyPoems(c.Context(), user.ID.Hex(), limit, before)
@@ -110,6 +113,9 @@ func (h *Handler) GetMyPoems(c *fiber.Ctx) error {
 func (h *Handler) GetUserPoems(c *fiber.Ctx) error {
 	targetUserID := c.Params("userId")
 	limit := c.QueryInt("limit", 20)
+	if limit > 50 {
+		limit = 50
+	}
 	before := c.Query("before")
 
 	callerID := ""

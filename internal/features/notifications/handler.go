@@ -23,6 +23,9 @@ func (h *Handler) GetNotifications(c *fiber.Ctx) error {
 	}
 
 	limit := c.QueryInt("limit", 20)
+	if limit > 50 {
+		limit = 50
+	}
 	before := c.Query("before")
 
 	notifs, hasMore, err := h.service.GetNotifications(c.Context(), user.ID.Hex(), limit, before)

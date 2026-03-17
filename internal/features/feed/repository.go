@@ -2,6 +2,7 @@ package feed
 
 import (
 	"context"
+	"regexp"
 
 	"github.com/xyz-asif/gotodo/internal/models"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -11,8 +12,8 @@ import (
 
 type Repository interface {
 	GetHomeFeed(ctx context.Context, authorIDs []bson.ObjectID, limit int, beforeID *bson.ObjectID) ([]models.Poem, error)
-	GetExploreFeed(ctx context.Context, hashtag string, limit int, beforeID *bson.ObjectID) ([]models.Poem, error)
-	GetAudioFeed(ctx context.Context, limit int, beforeID *bson.ObjectID) ([]models.Poem, error)
+	GetExploreFeed(ctx context.Context, hashtag string, limit int, offset int) ([]models.Poem, error)
+	GetAudioFeed(ctx context.Context, limit int, offset int) ([]models.Poem, error)
 	SearchPoems(ctx context.Context, query string, limit int, beforeID *bson.ObjectID) ([]models.Poem, error)
 	SearchUsers(ctx context.Context, query string, limit int, skip int) ([]models.User, int64, error)
 }
@@ -67,19 +68,13 @@ func (r *repository) GetHomeFeed(ctx context.Context, authorIDs []bson.ObjectID,
 //   score = (likes × 3) + (comments × 2) + (reposts × 1.5) - (hoursSincePosted × 0.5)
 //
 // This is computed server-side using MongoDB $addFields aggregation.
-// Cursor pagination uses a compound (score, _id) cursor approach:
-// for simplicity in Phase 2, we use offset-style skip on the score sort.
-// beforeID is used as a secondary cursor when provided.
-func (r *repository) GetExploreFeed(ctx context.Context, hashtag string, limit int, beforeID *bson.ObjectID) ([]models.Poem, error) {
+func (r *repository) GetExploreFeed(ctx context.Context, hashtag string, limit int, offset int) ([]models.Poem, error) {
 	matchFilter := bson.M{
 		"visibility": models.PoemVisibilityPublic,
 		"isDeleted":  false,
 	}
 	if hashtag != "" {
 		matchFilter["hashtags"] = hashtag
-	}
-	if beforeID != nil {
-		matchFilter["_id"] = bson.M{"$lt": *beforeID}
 	}
 
 	// Aggregation pipeline: filter → compute score → sort by score desc → limit
@@ -118,7 +113,10 @@ func (r *repository) GetExploreFeed(ctx context.Context, hashtag string, limit i
 			{Key: "_id", Value: -1},
 		}}},
 
-		// Stage 4: limit
+		// Stage 4: skip for offset pagination
+		{{Key: "$skip", Value: int64(offset)}},
+
+		// Stage 5: limit
 		{{Key: "$limit", Value: int64(limit)}},
 	}
 
@@ -166,10 +164,11 @@ func (r *repository) SearchPoems(ctx context.Context, query string, limit int, b
 
 // SearchUsers searches users by displayName or username using case-insensitive regex.
 func (r *repository) SearchUsers(ctx context.Context, query string, limit int, skip int) ([]models.User, int64, error) {
+	safeQuery := regexp.QuoteMeta(query)
 	filter := bson.M{
 		"$or": []bson.M{
-			{"displayName": bson.M{"$regex": query, "$options": "i"}},
-			{"username": bson.M{"$regex": query, "$options": "i"}},
+			{"displayName": bson.M{"$regex": safeQuery, "$options": "i"}},
+			{"username": bson.M{"$regex": safeQuery, "$options": "i"}},
 		},
 	}
 
@@ -194,14 +193,11 @@ func (r *repository) SearchUsers(ctx context.Context, query string, limit int, s
 }
 
 // GetAudioFeed returns public poems that have audio, scored by engagement + recency.
-func (r *repository) GetAudioFeed(ctx context.Context, limit int, beforeID *bson.ObjectID) ([]models.Poem, error) {
+func (r *repository) GetAudioFeed(ctx context.Context, limit int, offset int) ([]models.Poem, error) {
 	matchFilter := bson.M{
 		"visibility": models.PoemVisibilityPublic,
 		"isDeleted":  false,
 		"audioUrl":   bson.M{"$exists": true, "$ne": ""},
-	}
-	if beforeID != nil {
-		matchFilter["_id"] = bson.M{"$lt": *beforeID}
 	}
 
 	// Same engagement scoring as explore feed
@@ -232,6 +228,7 @@ func (r *repository) GetAudioFeed(ctx context.Context, limit int, beforeID *bson
 			{Key: "engagementScore", Value: -1},
 			{Key: "_id", Value: -1},
 		}}},
+		{{Key: "$skip", Value: int64(offset)}},
 		{{Key: "$limit", Value: int64(limit)}},
 	}
 

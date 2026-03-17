@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/xyz-asif/gotodo/internal/features/social"
 	"github.com/xyz-asif/gotodo/internal/features/users"
@@ -81,22 +82,23 @@ func validateVisibility(v string) bool {
 	return v == models.PoemVisibilityPublic || v == models.PoemVisibilityPrivate
 }
 
-func (s *service) buildAuthor(ctx context.Context, authorID bson.ObjectID) models.PoemAuthor {
-	author := models.PoemAuthor{ID: authorID.Hex()}
-	user, err := s.userRepo.GetUserByID(ctx, authorID)
-	if err == nil && user != nil {
-		author.DisplayName = user.DisplayName
-		author.Username = user.Username
-		author.PhotoURL = user.PhotoURL
-		author.IsEditor = user.IsEditor
+func buildAuthor(user *models.User) models.PoemAuthor {
+	if user == nil {
+		return models.PoemAuthor{}
 	}
-	return author
+	return models.PoemAuthor{
+		ID:          user.ID.Hex(),
+		DisplayName: user.DisplayName,
+		Username:    user.Username,
+		PhotoURL:    user.PhotoURL,
+		IsEditor:    user.IsEditor,
+	}
 }
 
-func (s *service) toResponse(ctx context.Context, poem *models.Poem) *models.PoemResponse {
+func (s *service) toResponse(poem *models.Poem, author *models.User) *models.PoemResponse {
 	return &models.PoemResponse{
 		ID:            poem.ID.Hex(),
-		Author:        s.buildAuthor(ctx, poem.AuthorID),
+		Author:        buildAuthor(author),
 		Title:         poem.Title,
 		ContentJSON:   poem.ContentJSON,
 		PlainText:     poem.PlainText,
@@ -162,16 +164,23 @@ func (s *service) Create(ctx context.Context, authorIDStr string, req CreatePoem
 	// Increment hashtag usage counts (fire and forget — non-blocking)
 	if len(hashtags) > 0 {
 		go func() {
-			_ = s.repo.UpsertHashtags(context.Background(), hashtags)
+			bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = s.repo.UpsertHashtags(bgCtx, hashtags)
 		}()
 	}
 
 	// Increment user's post count
 	go func() {
-		_ = s.userRepo.IncrementPostsCount(context.Background(), authorID)
+		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = s.userRepo.IncrementPostsCount(bgCtx, authorID)
 	}()
 
-	return s.toResponse(ctx, poem), nil
+	// Fetch the author ONCE (single poem operation)
+	author, _ := s.userRepo.GetUserByID(ctx, authorID)
+
+	return s.toResponse(poem, author), nil
 }
 
 func (s *service) GetByID(ctx context.Context, poemIDStr string, callerID string) (*models.PoemResponse, error) {
@@ -193,7 +202,10 @@ func (s *service) GetByID(ctx context.Context, poemIDStr string, callerID string
 		return nil, errors.New("poem not found")
 	}
 
-	return s.toResponse(ctx, poem), nil
+	// Fetch the author once
+	author, _ := s.userRepo.GetUserByID(ctx, poem.AuthorID)
+
+	return s.toResponse(poem, author), nil
 }
 
 func (s *service) Update(ctx context.Context, poemIDStr string, authorIDStr string, req UpdatePoemRequest) (*models.PoemResponse, error) {
@@ -247,11 +259,15 @@ func (s *service) Update(ctx context.Context, poemIDStr string, authorIDStr stri
 
 	// Update hashtag counts async — decrement old, increment new
 	go func() {
-		_ = s.repo.DecrementHashtags(context.Background(), existing.Hashtags)
-		_ = s.repo.UpsertHashtags(context.Background(), newHashtags)
+		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = s.repo.DecrementHashtags(bgCtx, existing.Hashtags)
+		_ = s.repo.UpsertHashtags(bgCtx, newHashtags)
 	}()
 
-	return s.toResponse(ctx, updated), nil
+	author, _ := s.userRepo.GetUserByID(ctx, updated.AuthorID)
+
+	return s.toResponse(updated, author), nil
 }
 
 func (s *service) Delete(ctx context.Context, poemIDStr string, authorIDStr string) error {
@@ -279,8 +295,10 @@ func (s *service) Delete(ctx context.Context, poemIDStr string, authorIDStr stri
 
 	// Decrement hashtags and postsCount async
 	go func() {
-		_ = s.repo.DecrementHashtags(context.Background(), existing.Hashtags)
-		_ = s.userRepo.DecrementPostsCount(context.Background(), authorID)
+		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = s.repo.DecrementHashtags(bgCtx, existing.Hashtags)
+		_ = s.userRepo.DecrementPostsCount(bgCtx, authorID)
 	}()
 
 	return nil
@@ -331,8 +349,11 @@ func (s *service) GetMyPoems(ctx context.Context, authorIDStr string, limit int,
 		likedMap, _ = s.socialRepo.IsPoemLikedMany(ctx, authorID, ids)
 	}
 
+	// Fetch the author ONCE (all poems have the same author)
+	author, _ := s.userRepo.GetUserByID(ctx, authorID)
+
 	for _, p := range poems {
-		resp := s.toResponse(ctx, &p)
+		resp := s.toResponse(&p, author)
 		if likedMap != nil {
 			resp.IsLikedByMe = likedMap[p.ID.Hex()]
 		}
@@ -377,9 +398,12 @@ func (s *service) GetUserPoems(ctx context.Context, targetUserIDStr string, call
 		poems = poems[:limit]
 	}
 
+	// Fetch the author once
+	author, _ := s.userRepo.GetUserByID(ctx, targetUserID)
+
 	responses := make([]models.PoemResponse, 0, len(poems))
 	for _, p := range poems {
-		responses = append(responses, *s.toResponse(ctx, &p))
+		responses = append(responses, *s.toResponse(&p, author))
 	}
 
 	return &models.PoemsPage{Poems: responses, HasMore: hasMore}, nil

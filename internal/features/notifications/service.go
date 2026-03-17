@@ -20,6 +20,7 @@ type HubSender interface {
 // UserLookup fetches user info for populating notification display data
 type UserLookup interface {
 	GetUserByID(ctx context.Context, id bson.ObjectID) (*models.User, error)
+	GetUsersByIDs(ctx context.Context, ids []bson.ObjectID) (map[bson.ObjectID]*models.User, error)
 	RemoveFCMTokens(ctx context.Context, userID bson.ObjectID, tokens []string) error
 }
 
@@ -198,6 +199,22 @@ func (s *service) GetNotifications(ctx context.Context, userIDStr string, limit 
 	}
 
 	// Build responses with actor info
+	// Batch fetch all actors
+	actorIDSet := make(map[bson.ObjectID]bool)
+	for _, n := range notifs {
+		actorIDSet[n.ActorID] = true
+	}
+	actorIDs := make([]bson.ObjectID, 0, len(actorIDSet))
+	for id := range actorIDSet {
+		actorIDs = append(actorIDs, id)
+	}
+	actorMap := make(map[bson.ObjectID]*models.User)
+	if len(actorIDs) > 0 {
+		if m, err := s.userLookup.GetUsersByIDs(ctx, actorIDs); err == nil {
+			actorMap = m
+		}
+	}
+
 	responses := make([]models.NotificationResponse, 0, len(notifs))
 	for _, n := range notifs {
 		resp := models.NotificationResponse{
@@ -213,8 +230,7 @@ func (s *service) GetNotifications(ctx context.Context, userIDStr string, limit 
 			ActorPhotoURL: n.ImageURL, // stored at creation time
 		}
 
-		// Actor name: look up from DB (could cache this, but fine for now)
-		if actor, err := s.userLookup.GetUserByID(ctx, n.ActorID); err == nil && actor != nil {
+		if actor, ok := actorMap[n.ActorID]; ok && actor != nil {
 			resp.ActorName = actor.DisplayName
 		}
 

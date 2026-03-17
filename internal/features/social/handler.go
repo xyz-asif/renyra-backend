@@ -32,6 +32,9 @@ func (h *Handler) TogglePoemLike(c *fiber.Ctx) error {
 func (h *Handler) GetPoemLikers(c *fiber.Ctx) error {
 	poemID := c.Params("id")
 	limit := c.QueryInt("limit", 20)
+	if limit > 50 {
+		limit = 50
+	}
 	before := c.Query("before")
 	users, hasMore, err := h.service.GetPoemLikers(c.Context(), poemID, limit, before)
 	if err != nil {
@@ -64,6 +67,9 @@ func (h *Handler) AddComment(c *fiber.Ctx) error {
 func (h *Handler) GetComments(c *fiber.Ctx) error {
 	poemID := c.Params("id")
 	limit := c.QueryInt("limit", 20)
+	if limit > 50 {
+		limit = 50
+	}
 	before := c.Query("before")
 	callerID := ""
 	if user, ok := c.Locals("user").(*models.User); ok {
@@ -121,6 +127,9 @@ func (h *Handler) ToggleRepost(c *fiber.Ctx) error {
 func (h *Handler) GetUserReposts(c *fiber.Ctx) error {
 	userID := c.Params("id")
 	limit := c.QueryInt("limit", 20)
+	if limit > 50 {
+		limit = 50
+	}
 	before := c.Query("before")
 	page, err := h.service.GetUserReposts(c.Context(), userID, limit, before)
 	if err != nil {

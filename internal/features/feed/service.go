@@ -3,6 +3,7 @@ package feed
 import (
 	"context"
 	"errors"
+	"log"
 
 	"github.com/xyz-asif/gotodo/internal/features/follows"
 	"github.com/xyz-asif/gotodo/internal/features/poems"
@@ -14,8 +15,8 @@ import (
 
 type Service interface {
 	GetHomeFeed(ctx context.Context, callerIDStr string, limit int, before string) (*models.FeedPage, error)
-	GetExploreFeed(ctx context.Context, callerIDStr string, hashtag string, limit int, before string) (*models.FeedPage, error)
-	GetAudioFeed(ctx context.Context, limit int, before string) (*models.FeedPage, error)
+	GetExploreFeed(ctx context.Context, userID string, hashtag string, limit int, offset int) (*models.FeedPage, error)
+	GetAudioFeed(ctx context.Context, limit int, offset int) (*models.FeedPage, error)
 	SearchPoems(ctx context.Context, query string, limit int, before string) (*models.PoemSearchPage, error)
 	SearchUsers(ctx context.Context, query string, callerIDStr string, limit int, offset int) (*models.UserSearchPage, error)
 }
@@ -37,7 +38,7 @@ func NewService(repo Repository, followRepo follows.Repository, userRepo users.R
 	}
 }
 
-func (s *service) buildPoemResponse(ctx context.Context, poem *models.Poem, isLiked, isReposted bool) models.PoemResponse {
+func (s *service) buildPoemResponse(ctx context.Context, poem *models.Poem, author *models.User, isLiked, isReposted bool) models.PoemResponse {
 	resp := models.PoemResponse{
 		ID:             poem.ID.Hex(),
 		Title:          poem.Title,
@@ -60,8 +61,7 @@ func (s *service) buildPoemResponse(ctx context.Context, poem *models.Poem, isLi
 	}
 
 	// Populate author
-	author, err := s.userRepo.GetUserByID(ctx, poem.AuthorID)
-	if err == nil && author != nil {
+	if author != nil {
 		resp.Author = models.PoemAuthor{
 			ID:          author.ID.Hex(),
 			DisplayName: author.DisplayName,
@@ -83,8 +83,12 @@ func (s *service) GetHomeFeed(ctx context.Context, callerIDStr string, limit int
 	if err != nil {
 		return nil, errors.New("invalid user id")
 	}
-	if limit <= 0 { limit = 20 }
-	if limit > 50 { limit = 50 }
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 50 {
+		limit = 50
+	}
 
 	// Get all user IDs that the caller follows
 	followingIDs, err := s.followRepo.GetFollowingIDs(ctx, callerID)
@@ -126,28 +130,41 @@ func (s *service) GetHomeFeed(ctx context.Context, callerIDStr string, limit int
 		repostedMap, _ = s.socialRepo.IsPoemRepostedMany(ctx, callerID, ids)
 	}
 
+	// Batch fetch authors
+	authorIDSet := make(map[bson.ObjectID]bool)
+	for _, p := range poemDocs {
+		authorIDSet[p.AuthorID] = true
+	}
+	authorIDs := make([]bson.ObjectID, 0, len(authorIDSet))
+	for id := range authorIDSet {
+		authorIDs = append(authorIDs, id)
+	}
+	authorMap, err := s.userRepo.GetUsersByIDs(ctx, authorIDs)
+	if err != nil {
+		log.Printf("Failed to batch fetch authors: %v", err)
+		authorMap = make(map[bson.ObjectID]*models.User)
+	}
+
 	responses := make([]models.PoemResponse, 0, len(poemDocs))
 	for _, p := range poemDocs {
-		responses = append(responses, s.buildPoemResponse(ctx, &p, likedMap[p.ID.Hex()], repostedMap[p.ID.Hex()]))
+		author := authorMap[p.AuthorID]
+		responses = append(responses, s.buildPoemResponse(ctx, &p, author, likedMap[p.ID.Hex()], repostedMap[p.ID.Hex()]))
 	}
 
 	return &models.FeedPage{Poems: responses, HasMore: hasMore}, nil
 }
 
-func (s *service) GetExploreFeed(ctx context.Context, callerIDStr string, hashtag string, limit int, before string) (*models.FeedPage, error) {
-	if limit <= 0 { limit = 20 }
-	if limit > 50 { limit = 50 }
-
-	var beforeID *bson.ObjectID
-	if before != "" {
-		id, err := bson.ObjectIDFromHex(before)
-		if err != nil {
-			return nil, errors.New("invalid before cursor")
-		}
-		beforeID = &id
+// GetExploreFeed returns poems weighted by engagement score with offset pagination.
+// Handles N+1 queries by batch-fetching all authors.
+func (s *service) GetExploreFeed(ctx context.Context, userID string, hashtag string, limit int, offset int) (*models.FeedPage, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 50 {
+		limit = 50
 	}
 
-	poemDocs, err := s.repo.GetExploreFeed(ctx, hashtag, limit+1, beforeID)
+	poemDocs, err := s.repo.GetExploreFeed(ctx, hashtag, limit+1, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -160,8 +177,8 @@ func (s *service) GetExploreFeed(ctx context.Context, callerIDStr string, hashta
 	// Batch check like/repost status
 	var likedMap map[string]bool
 	var repostedMap map[string]bool
-	if callerIDStr != "" {
-		callerID, err := bson.ObjectIDFromHex(callerIDStr)
+	if userID != "" {
+		callerID, err := bson.ObjectIDFromHex(userID)
 		if err == nil {
 			ids := make([]bson.ObjectID, 0, len(poemDocs))
 			for _, p := range poemDocs {
@@ -172,9 +189,69 @@ func (s *service) GetExploreFeed(ctx context.Context, callerIDStr string, hashta
 		}
 	}
 
+	// Batch fetch authors
+	authorIDSet := make(map[bson.ObjectID]bool)
+	for _, p := range poemDocs {
+		authorIDSet[p.AuthorID] = true
+	}
+	authorIDs := make([]bson.ObjectID, 0, len(authorIDSet))
+	for id := range authorIDSet {
+		authorIDs = append(authorIDs, id)
+	}
+	authorMap, err := s.userRepo.GetUsersByIDs(ctx, authorIDs)
+	if err != nil {
+		log.Printf("Failed to batch fetch authors: %v", err)
+		authorMap = make(map[bson.ObjectID]*models.User)
+	}
+
 	responses := make([]models.PoemResponse, 0, len(poemDocs))
 	for _, p := range poemDocs {
-		responses = append(responses, s.buildPoemResponse(ctx, &p, likedMap[p.ID.Hex()], repostedMap[p.ID.Hex()]))
+		author := authorMap[p.AuthorID]
+		responses = append(responses, s.buildPoemResponse(ctx, &p, author, likedMap[p.ID.Hex()], repostedMap[p.ID.Hex()]))
+	}
+
+	return &models.FeedPage{Poems: responses, HasMore: hasMore}, nil
+}
+
+// GetAudioFeed retrieves a timeline of audio poems.
+// Handles N+1 queries by batch-fetching all authors.
+func (s *service) GetAudioFeed(ctx context.Context, limit int, offset int) (*models.FeedPage, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 50 {
+		limit = 50
+	}
+
+	poemDocs, err := s.repo.GetAudioFeed(ctx, limit+1, offset)
+	if err != nil {
+		return nil, err
+	}
+
+	hasMore := len(poemDocs) > limit
+	if hasMore {
+		poemDocs = poemDocs[:limit]
+	}
+
+	// Batch fetch authors
+	authorIDSet := make(map[bson.ObjectID]bool)
+	for _, p := range poemDocs {
+		authorIDSet[p.AuthorID] = true
+	}
+	authorIDs := make([]bson.ObjectID, 0, len(authorIDSet))
+	for id := range authorIDSet {
+		authorIDs = append(authorIDs, id)
+	}
+	authorMap, err := s.userRepo.GetUsersByIDs(ctx, authorIDs)
+	if err != nil {
+		log.Printf("Failed to batch fetch authors: %v", err)
+		authorMap = make(map[bson.ObjectID]*models.User)
+	}
+
+	responses := make([]models.PoemResponse, 0, len(poemDocs))
+	for _, p := range poemDocs {
+		author := authorMap[p.AuthorID]
+		responses = append(responses, s.buildPoemResponse(ctx, &p, author, false, false))
 	}
 
 	return &models.FeedPage{Poems: responses, HasMore: hasMore}, nil
@@ -184,8 +261,12 @@ func (s *service) SearchPoems(ctx context.Context, query string, limit int, befo
 	if query == "" {
 		return &models.PoemSearchPage{Poems: []models.PoemResponse{}, HasMore: false}, nil
 	}
-	if limit <= 0 { limit = 20 }
-	if limit > 50 { limit = 50 }
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 50 {
+		limit = 50
+	}
 
 	var beforeID *bson.ObjectID
 	if before != "" {
@@ -206,9 +287,25 @@ func (s *service) SearchPoems(ctx context.Context, query string, limit int, befo
 		poemDocs = poemDocs[:limit]
 	}
 
+	// Batch fetch authors
+	authorIDSet := make(map[bson.ObjectID]bool)
+	for _, p := range poemDocs {
+		authorIDSet[p.AuthorID] = true
+	}
+	authorIDs := make([]bson.ObjectID, 0, len(authorIDSet))
+	for id := range authorIDSet {
+		authorIDs = append(authorIDs, id)
+	}
+	authorMap, err := s.userRepo.GetUsersByIDs(ctx, authorIDs)
+	if err != nil {
+		log.Printf("Failed to batch fetch authors: %v", err)
+		authorMap = make(map[bson.ObjectID]*models.User)
+	}
+
 	responses := make([]models.PoemResponse, 0, len(poemDocs))
 	for _, p := range poemDocs {
-		responses = append(responses, s.buildPoemResponse(ctx, &p, false, false)) // Search doesn't usually show status but we could add it
+		author := authorMap[p.AuthorID]
+		responses = append(responses, s.buildPoemResponse(ctx, &p, author, false, false))
 	}
 
 	return &models.PoemSearchPage{Poems: responses, HasMore: hasMore}, nil
@@ -218,8 +315,12 @@ func (s *service) SearchUsers(ctx context.Context, query string, callerIDStr str
 	if query == "" {
 		return &models.UserSearchPage{Users: []models.UserSearchResult{}, HasMore: false}, nil
 	}
-	if limit <= 0 { limit = 20 }
-	if limit > 50 { limit = 50 }
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 50 {
+		limit = 50
+	}
 
 	userDocs, total, err := s.repo.SearchUsers(ctx, query, limit+1, offset)
 	if err != nil {
@@ -259,37 +360,4 @@ func (s *service) SearchUsers(ctx context.Context, query string, callerIDStr str
 	return &models.UserSearchPage{Users: results, HasMore: hasMore}, nil
 }
 
-func (s *service) GetAudioFeed(ctx context.Context, limit int, before string) (*models.FeedPage, error) {
-	if limit <= 0 {
-		limit = 20
-	}
-	if limit > 50 {
-		limit = 50
-	}
 
-	var beforeID *bson.ObjectID
-	if before != "" {
-		id, err := bson.ObjectIDFromHex(before)
-		if err != nil {
-			return nil, errors.New("invalid before cursor")
-		}
-		beforeID = &id
-	}
-
-	poemDocs, err := s.repo.GetAudioFeed(ctx, limit+1, beforeID)
-	if err != nil {
-		return nil, err
-	}
-
-	hasMore := len(poemDocs) > limit
-	if hasMore {
-		poemDocs = poemDocs[:limit]
-	}
-
-	responses := make([]models.PoemResponse, 0, len(poemDocs))
-	for _, p := range poemDocs {
-		responses = append(responses, s.buildPoemResponse(ctx, &p, false, false))
-	}
-
-	return &models.FeedPage{Poems: responses, HasMore: hasMore}, nil
-}

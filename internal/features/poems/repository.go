@@ -146,44 +146,68 @@ func (r *repository) GetByAuthor(ctx context.Context, authorID bson.ObjectID, li
 
 // UpsertHashtags increments usageCount for each tag, creating the document if it doesn't exist.
 func (r *repository) UpsertHashtags(ctx context.Context, tags []string) error {
+	if len(tags) == 0 {
+		return nil
+	}
+
+	var models []mongo.WriteModel
+	now := time.Now()
+
 	for _, tag := range tags {
 		if tag == "" {
 			continue
 		}
-		_, err := r.hashtags.UpdateOne(ctx,
-			bson.M{"tag": tag},
-			bson.M{
+		
+		model := mongo.NewUpdateOneModel().
+			SetFilter(bson.M{"tag": tag}).
+			SetUpdate(bson.M{
 				"$inc": bson.M{"usageCount": 1},
-				"$set": bson.M{"updatedAt": time.Now()},
+				"$set": bson.M{"updatedAt": now},
 				"$setOnInsert": bson.M{"tag": tag},
-			},
-			options.UpdateOne().SetUpsert(true),
-		)
-		if err != nil {
-			return err
-		}
+			}).
+			SetUpsert(true)
+			
+		models = append(models, model)
 	}
-	return nil
+
+	if len(models) == 0 {
+		return nil
+	}
+
+	_, err := r.hashtags.BulkWrite(ctx, models, options.BulkWrite().SetOrdered(false))
+	return err
 }
 
 // DecrementHashtags decrements usageCount when a poem is deleted or hashtags are removed.
 // Never goes below 0.
 func (r *repository) DecrementHashtags(ctx context.Context, tags []string) error {
+	if len(tags) == 0 {
+		return nil
+	}
+
+	var models []mongo.WriteModel
+	now := time.Now()
+
 	for _, tag := range tags {
 		if tag == "" {
 			continue
 		}
+		
 		// Only decrement if usageCount > 0
-		_, err := r.hashtags.UpdateOne(ctx,
-			bson.M{"tag": tag, "usageCount": bson.M{"$gt": 0}},
-			bson.M{
+		model := mongo.NewUpdateOneModel().
+			SetFilter(bson.M{"tag": tag, "usageCount": bson.M{"$gt": 0}}).
+			SetUpdate(bson.M{
 				"$inc": bson.M{"usageCount": -1},
-				"$set": bson.M{"updatedAt": time.Now()},
-			},
-		)
-		if err != nil {
-			return err
-		}
+				"$set": bson.M{"updatedAt": now},
+			})
+			
+		models = append(models, model)
 	}
-	return nil
+
+	if len(models) == 0 {
+		return nil
+	}
+
+	_, err := r.hashtags.BulkWrite(ctx, models, options.BulkWrite().SetOrdered(false))
+	return err
 }

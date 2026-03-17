@@ -136,14 +136,5 @@ func (s *service) SetUsername(ctx context.Context, userIDStr string, username st
 		return nil, errors.New("this username is reserved")
 	}
 
-	// One final availability check right before write (race condition guard)
-	taken, err := s.repo.IsUsernameTaken(ctx, username)
-	if err != nil {
-		return nil, err
-	}
-	if taken {
-		return nil, errors.New("username is already taken")
-	}
-
 	return s.repo.SetUsername(ctx, userID, username)
 }

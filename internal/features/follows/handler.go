@@ -56,6 +56,9 @@ func (h *Handler) GetPublicProfile(c *fiber.Ctx) error {
 func (h *Handler) GetFollowers(c *fiber.Ctx) error {
 	targetID := c.Params("id")
 	limit := c.QueryInt("limit", 20)
+	if limit > 50 {
+		limit = 50
+	}
 	before := c.Query("before")
 	callerID := ""
 	if user, ok := c.Locals("user").(*models.User); ok {
@@ -74,6 +77,9 @@ func (h *Handler) GetFollowers(c *fiber.Ctx) error {
 func (h *Handler) GetFollowing(c *fiber.Ctx) error {
 	targetID := c.Params("id")
 	limit := c.QueryInt("limit", 20)
+	if limit > 50 {
+		limit = 50
+	}
 	before := c.Query("before")
 	callerID := ""
 	if user, ok := c.Locals("user").(*models.User); ok {

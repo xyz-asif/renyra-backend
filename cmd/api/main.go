@@ -4,10 +4,17 @@ package main
 import (
 	"context"
 	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
+	firebase "firebase.google.com/go/v4"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
+	"google.golang.org/api/option"
 	"github.com/xyz-asif/gotodo/internal/config"
 	"github.com/xyz-asif/gotodo/internal/database"
 	"github.com/xyz-asif/gotodo/internal/features/chat"
@@ -42,6 +49,16 @@ func main() {
 		log.Printf("Warning: Failed to create indexes: %v", err)
 	}
 
+	// Initialize Firebase App globally
+	var opts []option.ClientOption
+	if cfg.FirebaseCredsPath != "" {
+		opts = append(opts, option.WithCredentialsFile(cfg.FirebaseCredsPath))
+	}
+	firebaseApp, err := firebase.NewApp(context.Background(), &firebase.Config{ProjectID: cfg.FirebaseProjectID}, opts...)
+	if err != nil {
+		log.Printf("Warning: Failed to initialize Firebase App: %v", err)
+	}
+
 	// 4. Setup Repositories
 	userRepo := users.NewRepository(db.Database)
 	connectionRepo := connections.NewRepository(db.Database)
@@ -53,7 +70,7 @@ func main() {
 
 	// Initialize notification system
 	notifRepo := notifications.NewRepository(db.Database)
-	fcmSender := notifications.NewFirebaseFCM(cfg.FirebaseCredsPath, cfg.FirebaseProjectID)
+	fcmSender := notifications.NewFirebaseFCM(firebaseApp)
 	notifService := notifications.NewService(notifRepo, userRepo, chatHub, fcmSender)
 	notifHandler := notifications.NewHandler(notifService)
 
@@ -84,7 +101,7 @@ func main() {
 	poemHandler := poems.NewHandler(poemService)
 
 	followRepo := follows.NewRepository(db.Database)
-	followService := follows.NewService(followRepo, userRepo, notifService)
+	followService := follows.NewService(followRepo, userRepo, notifService, db.Client)
 	followHandler := follows.NewHandler(followService)
 
 	socialService := social.NewService(socialRepo, userRepo, notifService, db.Database)
@@ -95,14 +112,17 @@ func main() {
 	feedHandler := feed.NewHandler(feedService)
 
 	// 5. Setup Middleware
-	authMiddleware, err := middleware.NewAuthMiddleware(cfg.FirebaseCredsPath, cfg.FirebaseProjectID, userService)
+	authMiddleware, err := middleware.NewAuthMiddleware(firebaseApp, userService)
 	if err != nil {
 		log.Printf("Warning: Firebase Auth not setup: %v", err)
 	}
 
 	// 6. Setup Fiber
 	app := fiber.New(fiber.Config{
-		AppName: "Chat API v1.0",
+		AppName:      "Chat API v1.0",
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	})
 	app.Use(logger.New())
 	app.Use(cors.New())
@@ -128,10 +148,34 @@ func main() {
 		followHandler,
 		feedHandler,
 		socialHandler,
+		db.Database,
 	)
-	// 8. Start Server
+	// 8. Start Server (Graceful Shutdown)
 	log.Printf("🚀 Starting Chat API on port %s", cfg.Port)
-	if err := app.Listen(":" + cfg.Port); err != nil {
-		log.Fatalf("Server error: %v", err)
+	
+	shutdownChan := make(chan os.Signal, 1)
+	signal.Notify(shutdownChan, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		if err := app.Listen(":" + cfg.Port); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server listen error: %v", err)
+		}
+	}()
+
+	<-shutdownChan
+	log.Println("Shutting down gracefully...")
+
+	// 9. Cleanup
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := app.ShutdownWithContext(shutdownCtx); err != nil {
+		log.Printf("Fiber Shutdown Error: %v", err)
 	}
+
+	if err := db.Client.Disconnect(shutdownCtx); err != nil {
+		log.Printf("MongoDB Disconnect Error: %v", err)
+	}
+
+	log.Println("Server stopped properly")
 }
