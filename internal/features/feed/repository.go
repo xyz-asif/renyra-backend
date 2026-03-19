@@ -72,6 +72,7 @@ func (r *repository) GetExploreFeed(ctx context.Context, hashtag string, limit i
 	matchFilter := bson.M{
 		"visibility": models.PoemVisibilityPublic,
 		"isDeleted":  false,
+		"isRepost":   false,  // reposts should not appear in explore
 	}
 	if hashtag != "" {
 		matchFilter["hashtags"] = hashtag
@@ -198,6 +199,7 @@ func (r *repository) GetAudioFeed(ctx context.Context, limit int, offset int) ([
 		"visibility": models.PoemVisibilityPublic,
 		"isDeleted":  false,
 		"audioUrl":   bson.M{"$exists": true, "$ne": ""},
+		"isRepost":   false,  // reposts should not appear in audio feed
 	}
 
 	// Same engagement scoring as explore feed
