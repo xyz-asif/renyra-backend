@@ -85,6 +85,13 @@ func (s *service) GetOrCreateDirectRoom(ctx context.Context, user1IDStr, user2ID
 		return nil, err
 	}
 
+	// ADD nil check — GetOrCreateDirectRoomAtomic can return (nil, nil) 
+	// if duplicate key path doesn't properly fetch the existing room
+	if room == nil {
+		return nil, errors.New("failed to create or find room")
+	}
+
+	// Pass nil for userMap — this is a single-room call, no batch needed
 	return s.buildRoomResponse(ctx, room, user1IDStr, nil)
 }
 
@@ -1048,6 +1055,9 @@ func isUserInRoom(room *models.Room, userID bson.ObjectID) bool {
 }
 
 func (s *service) buildRoomResponse(ctx context.Context, room *models.Room, forUserID string, userMap map[bson.ObjectID]*models.User) (*models.RoomResponse, error) {
+	if room == nil {
+		return nil, errors.New("buildRoomResponse: room is nil")
+	}
 	resp := &models.RoomResponse{
 		ID:              room.ID.Hex(),
 		Type:            room.Type,

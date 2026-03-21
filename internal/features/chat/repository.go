@@ -2,6 +2,8 @@ package chat
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
 	"regexp"
 	"time"
@@ -88,92 +90,86 @@ func (r *repository) GetRoomByID(ctx context.Context, roomID bson.ObjectID) (*mo
 }
 
 func (r *repository) GetDirectRoom(ctx context.Context, user1ID, user2ID bson.ObjectID) (*models.Room, error) {
+	log.Printf("[ROOM] GetDirectRoom: looking for room with user1=%s, user2=%s", user1ID.Hex(), user2ID.Hex())
+	
 	var room models.Room
-	filter := bson.M{
+	err := r.rooms.FindOne(ctx, bson.M{
 		"type": models.RoomTypeDirect,
-		"participants": bson.M{
-			"$all":  []bson.ObjectID{user1ID, user2ID},
-			"$size": 2,
+		"$and": []bson.M{
+			{"participants": user1ID},
+			{"participants": user2ID},
 		},
-	}
-
-	err := r.rooms.FindOne(ctx, filter).Decode(&room)
+	}).Decode(&room)
+	
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
+			log.Printf("[ROOM] GetDirectRoom: no room found")
 			return nil, nil
 		}
+		log.Printf("[ROOM] GetDirectRoom error: %v", err)
 		return nil, err
 	}
+	
+	log.Printf("[ROOM] GetDirectRoom: found room %s with participants %v", room.ID.Hex(), room.Participants)
 	return &room, nil
 }
 
 // GetOrCreateDirectRoomAtomic finds or atomically creates a direct room between two users.
 // Handles race conditions, duplicate key errors, and ensures data integrity.
 func (r *repository) GetOrCreateDirectRoomAtomic(ctx context.Context, user1ID, user2ID bson.ObjectID) (*models.Room, error) {
-	// First, try to find the existing direct room
-	room, err := r.GetDirectRoom(ctx, user1ID, user2ID)
+	// Sort participants for consistent ordering
+	participants := []bson.ObjectID{user1ID, user2ID}
+	if user1ID.Hex() > user2ID.Hex() {
+		participants = []bson.ObjectID{user2ID, user1ID}
+	}
+	
+	log.Printf("[ROOM] GetOrCreateDirectRoomAtomic: user1=%s, user2=%s, sorted=[%s, %s]",
+		user1ID.Hex(), user2ID.Hex(), participants[0].Hex(), participants[1].Hex())
+
+	// First, try to find existing room
+	existing, err := r.GetDirectRoom(ctx, user1ID, user2ID)
 	if err != nil {
+		log.Printf("[ROOM] GetDirectRoom error: %v", err)
 		return nil, err
 	}
-	if room != nil {
-		// Verify room has both participants (data integrity check)
-		if len(room.Participants) != 2 {
-			log.Printf("WARNING: Room %s has %d participants, expected 2. Fixing...", room.ID.Hex(), len(room.Participants))
-			// Try to fix the room by ensuring both users are participants
-			room.Participants = []bson.ObjectID{user1ID, user2ID}
-			_, _ = r.rooms.UpdateOne(ctx, bson.M{"_id": room.ID}, bson.M{
-				"$set": bson.M{"participants": room.Participants},
-			})
-		}
-		return room, nil
+	if existing != nil {
+		log.Printf("[ROOM] Found existing room: %s", existing.ID.Hex())
+		return existing, nil
 	}
 
-	// Create a new direct room if it doesn't exist
+	log.Printf("[ROOM] No existing room found, creating new one")
+
+	// Create new room
 	now := time.Now()
-
-	// Sort participants to ensure the unique index works flawlessly (array order matters)
-	p1, p2 := user1ID, user2ID
-	if p1.Hex() > p2.Hex() {
-		p1, p2 = p2, p1
-	}
-
 	newRoom := &models.Room{
 		Type:         models.RoomTypeDirect,
-		Participants: []bson.ObjectID{p1, p2},
-		UnreadCounts: map[string]int{
-			user1ID.Hex(): 0,
-			user2ID.Hex(): 0,
-		},
-		CreatedAt:   now,
-		LastUpdated: now,
+		Participants: participants,
+		CreatedAt:    now,
+		LastUpdated:  now,
 	}
 
-	if err := r.CreateRoom(ctx, newRoom); err != nil {
-		// Check if room was created by concurrent request (unique index violation)
+	result, err := r.rooms.InsertOne(ctx, newRoom)
+	if err != nil {
+		log.Printf("[ROOM] InsertOne error: %v (isDuplicateKey: %v)", err, mongo.IsDuplicateKeyError(err))
 		if mongo.IsDuplicateKeyError(err) {
-			// Room was created by another concurrent request, fetch it
-			return r.GetDirectRoom(ctx, user1ID, user2ID)
+			// Race condition — another request created the room. Fetch it.
+			existing, fetchErr := r.GetDirectRoom(ctx, user1ID, user2ID)
+			if fetchErr != nil {
+				log.Printf("[ROOM] Fetch after duplicate error: %v", fetchErr)
+				return nil, fmt.Errorf("room exists but fetch failed: %w", fetchErr)
+			}
+			if existing == nil {
+				log.Printf("[ROOM] CRITICAL: duplicate key error but room not found!")
+				return nil, errors.New("room exists (duplicate key) but could not be found")
+			}
+			return existing, nil
 		}
 		return nil, err
 	}
 
-	// Verify the room was created correctly by re-fetching it
-	// This ensures read-after-write consistency
-	createdRoom, err := r.GetRoomByID(ctx, newRoom.ID)
-	if err != nil {
-		log.Printf("WARNING: Failed to fetch created room %s: %v", newRoom.ID.Hex(), err)
-		// Return the in-memory room as fallback
-		return newRoom, nil
-	}
-
-	// Verify participants are correct
-	if len(createdRoom.Participants) != 2 {
-		log.Printf("WARNING: Created room %s has %d participants, expected 2", createdRoom.ID.Hex(), len(createdRoom.Participants))
-		// Fix the room participants
-		createdRoom.Participants = []bson.ObjectID{user1ID, user2ID}
-	}
-
-	return createdRoom, nil
+	newRoom.ID = result.InsertedID.(bson.ObjectID)
+	log.Printf("[ROOM] Created new room: %s", newRoom.ID.Hex())
+	return newRoom, nil
 }
 
 // SearchRooms returns paginated rooms for a user, searching by room name.

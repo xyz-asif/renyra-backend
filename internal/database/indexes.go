@@ -55,18 +55,13 @@ func CreateIndexes(ctx context.Context, db *mongo.Database) error {
 	}
 
 	// ── Chat Rooms ──
+	// NOTE: No unique index on {type, participants} — MongoDB unique indexes on
+	// array fields enforce per-element uniqueness, which prevents a user from being
+	// in more than one direct room. Deduplication is handled in application code
+	// via FindOneAndUpdate with upsert in GetOrCreateDirectRoomAtomic.
 	roomsIndexes := []mongo.IndexModel{
 		// Fast lookup: all rooms a user participates in, sorted by last activity
 		{Keys: bson.D{{Key: "participants", Value: 1}, {Key: "lastUpdated", Value: -1}}},
-		// Fast lookup: find existing direct room between two people
-		{Keys: bson.D{{Key: "type", Value: 1}, {Key: "participants", Value: 1}}},
-		// Enforce unique direct rooms between the same participants
-		{
-			Keys: bson.D{{Key: "type", Value: 1}, {Key: "participants", Value: 1}},
-			Options: options.Index().SetUnique(true).SetPartialFilterExpression(bson.M{
-				"type": "direct",
-			}),
-		},
 		// Index for searching rooms by participant IDs (for $in queries)
 		{Keys: bson.D{{Key: "participants", Value: 1}}},
 	}
