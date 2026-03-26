@@ -3,9 +3,11 @@ package poems
 import (
 	"context"
 	"errors"
+	"regexp"
 	"strings"
 	"time"
 
+	"github.com/xyz-asif/gotodo/internal/features/notifications"
 	"github.com/xyz-asif/gotodo/internal/features/social"
 	"github.com/xyz-asif/gotodo/internal/features/users"
 	"github.com/xyz-asif/gotodo/internal/models"
@@ -34,6 +36,8 @@ type CreatePoemRequest struct {
 	AudioURL      string   `json:"audioUrl"`      // Cloudinary URL, empty if no audio
 	AudioDuration int      `json:"audioDuration"` // seconds
 	CoverColor    string   `json:"coverColor"`    // hex from editor
+	Description   string   `json:"description"`   // NEW: poem description with @mentions
+	TextAlign     string   `json:"textAlign"`     // NEW: "left" | "center" | "right"
 }
 
 // UpdatePoemRequest — same fields, all optional (only changed fields need to be sent)
@@ -48,16 +52,19 @@ type UpdatePoemRequest struct {
 	AudioURL      string   `json:"audioUrl"`
 	AudioDuration int      `json:"audioDuration"`
 	CoverColor    string   `json:"coverColor"`
+	Description   string   `json:"description"`   // NEW
+	TextAlign     string   `json:"textAlign"`     // NEW
 }
 
 type service struct {
-	repo       Repository
-	userRepo   users.Repository
-	socialRepo social.Repository
+	repo          Repository
+	userRepo      users.Repository
+	socialRepo    social.Repository
+	notifService  notifications.Service
 }
 
-func NewService(repo Repository, userRepo users.Repository, socialRepo social.Repository) Service {
-	return &service{repo: repo, userRepo: userRepo, socialRepo: socialRepo}
+func NewService(repo Repository, userRepo users.Repository, socialRepo social.Repository, notifService notifications.Service) Service {
+	return &service{repo: repo, userRepo: userRepo, socialRepo: socialRepo, notifService: notifService}
 }
 
 // sanitizeHashtags normalises hashtags: lowercase, strip #, remove duplicates, max 10
@@ -78,6 +85,79 @@ func sanitizeHashtags(tags []string) []string {
 	return result
 }
 
+var mentionRegex = regexp.MustCompile(`@([a-zA-Z0-9_-]{3,20})`)
+
+// extractMentionedUsernames parses @username patterns from text.
+// Returns deduplicated, lowercased usernames.
+func extractMentionedUsernames(text string) []string {
+	matches := mentionRegex.FindAllStringSubmatch(text, -1)
+	seen := make(map[string]bool)
+	usernames := make([]string, 0, len(matches))
+	for _, m := range matches {
+		username := strings.ToLower(m[1])
+		if !seen[username] {
+			seen[username] = true
+			usernames = append(usernames, username)
+		}
+	}
+	return usernames
+}
+
+// resolveMentions takes a description string, extracts @usernames,
+// looks up each in the DB, and returns the resolved ObjectIDs.
+// Non-existent usernames are silently skipped.
+func (s *service) resolveMentions(ctx context.Context, description string) []bson.ObjectID {
+	usernames := extractMentionedUsernames(description)
+	if len(usernames) == 0 {
+		return nil
+	}
+
+	mentionIDs := make([]bson.ObjectID, 0, len(usernames))
+	for _, username := range usernames {
+		user, err := s.userRepo.GetUserByUsername(ctx, username)
+		if err != nil {
+			continue // skip non-existent users
+		}
+		mentionIDs = append(mentionIDs, user.ID)
+	}
+	return mentionIDs
+}
+
+// sendMentionNotifications sends a notification to each newly mentioned user.
+// oldMentions is nil for new poems, or the previous mentions list for updates.
+// IMPORTANT: This is called with `go s.sendMentionNotifications(...)` from the caller,
+// so it already runs in a goroutine. Do NOT spawn additional goroutines inside.
+func (s *service) sendMentionNotifications(author *models.User, poem *models.Poem, oldMentions []bson.ObjectID) {
+	ctx := context.Background() // fresh context — the request context may be cancelled
+
+	oldSet := make(map[bson.ObjectID]bool)
+	for _, id := range oldMentions {
+		oldSet[id] = true
+	}
+
+	for _, id := range poem.Mentions {
+		// Skip if already mentioned before (on update)
+		if oldSet[id] {
+			continue
+		}
+		// Don't notify yourself
+		if id == author.ID {
+			continue
+		}
+
+		s.notifService.Send(ctx, models.SendNotificationRequest{
+			RecipientID:  id,
+			ActorID:      author.ID,
+			Type:         models.NotifTypeMentioned,
+			ResourceType: models.ResourceTypePoem,
+			ResourceID:   poem.ID.Hex(),
+			Title:        author.DisplayName + " mentioned you",
+			Body:         `in "` + poem.Title + `"`,
+			GroupKey:     "mention:" + poem.ID.Hex(),
+		})
+	}
+}
+
 func validateVisibility(v string) bool {
 	return v == models.PoemVisibilityPublic || v == models.PoemVisibilityPrivate
 }
@@ -96,7 +176,7 @@ func buildAuthor(user *models.User) models.PoemAuthor {
 }
 
 func (s *service) toResponse(poem *models.Poem, author *models.User) *models.PoemResponse {
-	return &models.PoemResponse{
+	resp := &models.PoemResponse{
 		ID:            poem.ID.Hex(),
 		Author:        buildAuthor(author),
 		Title:         poem.Title,
@@ -109,12 +189,39 @@ func (s *service) toResponse(poem *models.Poem, author *models.User) *models.Poe
 		AudioURL:      poem.AudioURL,
 		AudioDuration: poem.AudioDuration,
 		CoverColor:    poem.CoverColor,
+		Description:   poem.Description,
+		TextAlign:     poem.TextAlign,
 		LikesCount:    poem.LikesCount,
 		CommentsCount: poem.CommentsCount,
 		RepostsCount:  poem.RepostsCount,
 		CreatedAt:     poem.CreatedAt,
 		UpdatedAt:     poem.UpdatedAt,
 	}
+
+	// Initialize mentions to empty slice (never nil — avoids JSON null)
+	resp.Mentions = []models.MentionedUser{}
+
+	// Populate if there are mentions
+	if len(poem.Mentions) > 0 {
+		for _, uid := range poem.Mentions {
+			user, err := s.userRepo.GetUserByID(context.Background(), uid)
+			if err != nil {
+				continue // skip deleted/invalid users
+			}
+			resp.Mentions = append(resp.Mentions, models.MentionedUser{
+				ID:          user.ID.Hex(),
+				Username:    user.Username,
+				DisplayName: user.DisplayName,
+				PhotoURL:    user.PhotoURL,
+			})
+		}
+	}
+
+	if resp.Hashtags == nil {
+		resp.Hashtags = []string{}
+	}
+
+	return resp
 }
 
 func (s *service) Create(ctx context.Context, authorIDStr string, req CreatePoemRequest) (*models.PoemResponse, error) {
@@ -141,7 +248,26 @@ func (s *service) Create(ctx context.Context, authorIDStr string, req CreatePoem
 		return nil, errors.New("invalid mood value")
 	}
 
+	// Validate word count
+	words := strings.Fields(strings.TrimSpace(req.PlainText))
+	if len(words) > 150 {
+		return nil, errors.New("poem body exceeds 150 word limit")
+	}
+
+	// Validate textAlign
+	if req.TextAlign != "" && req.TextAlign != "left" && req.TextAlign != "center" && req.TextAlign != "right" {
+		return nil, errors.New("textAlign must be left, center, or right")
+	}
+
+	// Validate description length
+	if len([]rune(req.Description)) > 200 {
+		return nil, errors.New("description exceeds 200 character limit")
+	}
+
 	hashtags := sanitizeHashtags(req.Hashtags)
+
+	// Resolve @mentions from description
+	mentionIDs := s.resolveMentions(ctx, req.Description)
 
 	poem := &models.Poem{
 		AuthorID:      authorID,
@@ -155,6 +281,9 @@ func (s *service) Create(ctx context.Context, authorIDStr string, req CreatePoem
 		AudioURL:      req.AudioURL,
 		AudioDuration: req.AudioDuration,
 		CoverColor:    req.CoverColor,
+		Description:   req.Description,
+		TextAlign:     req.TextAlign,
+		Mentions:      mentionIDs,
 	}
 
 	if err := s.repo.Create(ctx, poem); err != nil {
@@ -179,6 +308,9 @@ func (s *service) Create(ctx context.Context, authorIDStr string, req CreatePoem
 
 	// Fetch the author ONCE (single poem operation)
 	author, _ := s.userRepo.GetUserByID(ctx, authorID)
+
+	// Send mention notifications (async, don't block response)
+	go s.sendMentionNotifications(author, poem, nil)
 
 	return s.toResponse(poem, author), nil
 }
@@ -239,7 +371,29 @@ func (s *service) Update(ctx context.Context, poemIDStr string, authorIDStr stri
 		return nil, errors.New("invalid mood value")
 	}
 
+	// Validate word count
+	words := strings.Fields(strings.TrimSpace(req.PlainText))
+	if len(words) > 150 {
+		return nil, errors.New("poem body exceeds 150 word limit")
+	}
+
+	// Validate textAlign
+	if req.TextAlign != "" && req.TextAlign != "left" && req.TextAlign != "center" && req.TextAlign != "right" {
+		return nil, errors.New("textAlign must be left, center, or right")
+	}
+
+	// Validate description length
+	if len([]rune(req.Description)) > 200 {
+		return nil, errors.New("description exceeds 200 character limit")
+	}
+
+	// Capture old mentions before update
+	oldMentions := existing.Mentions
+
 	newHashtags := sanitizeHashtags(req.Hashtags)
+
+	// Resolve new mentions
+	newMentionIDs := s.resolveMentions(ctx, req.Description)
 
 	updated, err := s.repo.Update(ctx, poemID, PoemUpdateFields{
 		Title:         req.Title,
@@ -252,6 +406,9 @@ func (s *service) Update(ctx context.Context, poemIDStr string, authorIDStr stri
 		AudioURL:      req.AudioURL,
 		AudioDuration: req.AudioDuration,
 		CoverColor:    req.CoverColor,
+		Description:   req.Description,
+		TextAlign:     req.TextAlign,
+		Mentions:      newMentionIDs,
 	})
 	if err != nil {
 		return nil, err
@@ -266,6 +423,9 @@ func (s *service) Update(ctx context.Context, poemIDStr string, authorIDStr stri
 	}()
 
 	author, _ := s.userRepo.GetUserByID(ctx, updated.AuthorID)
+
+	// Send notifications only to newly mentioned users
+	go s.sendMentionNotifications(author, updated, oldMentions)
 
 	return s.toResponse(updated, author), nil
 }

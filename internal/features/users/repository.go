@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/xyz-asif/gotodo/internal/models"
@@ -165,12 +166,17 @@ func (r *repository) GetUsersByIDs(ctx context.Context, ids []bson.ObjectID) (ma
 	return userMap, nil
 }
 
-// AddFCMToken adds a token if not already present (idempotent $addToSet).
 func (r *repository) AddFCMToken(ctx context.Context, userID bson.ObjectID, token string) error {
 	_, err := r.collection.UpdateOne(ctx,
 		bson.M{"_id": userID},
 		bson.M{"$addToSet": bson.M{"fcmTokens": token}},
 	)
+	if err != nil && (strings.Contains(err.Error(), "non-array type null") || strings.Contains(err.Error(), "Cannot apply $addToSet")) {
+		_, err = r.collection.UpdateOne(ctx,
+			bson.M{"_id": userID},
+			bson.M{"$set": bson.M{"fcmTokens": []string{token}}},
+		)
+	}
 	return err
 }
 

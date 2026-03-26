@@ -32,6 +32,9 @@ type Poem struct {
 	AudioURL      string        `bson:"audioUrl,omitempty"   json:"audioUrl,omitempty"` // Cloudinary URL
 	AudioDuration int           `bson:"audioDuration"        json:"audioDuration"` // seconds, 0 if no audio
 	CoverColor    string        `bson:"coverColor,omitempty" json:"coverColor,omitempty"` // hex color from editor
+	Description   string        `bson:"description,omitempty" json:"description,omitempty"`
+	TextAlign     string        `bson:"textAlign,omitempty"   json:"textAlign,omitempty"`   // "left" | "center" | "right"
+	Mentions      []bson.ObjectID `bson:"mentions,omitempty"    json:"mentions,omitempty"`    // user IDs parsed from description @mentions
 	LikesCount    int           `bson:"likesCount"           json:"likesCount"`
 	CommentsCount int           `bson:"commentsCount"        json:"commentsCount"`
 	RepostsCount  int            `bson:"repostsCount"         json:"repostsCount"`
@@ -58,6 +61,9 @@ type PoemResponse struct {
 	AudioURL      string     `json:"audioUrl,omitempty"`
 	AudioDuration int        `json:"audioDuration"`
 	CoverColor    string     `json:"coverColor,omitempty"`
+	Description   string     `json:"description,omitempty"`
+	TextAlign     string     `json:"textAlign,omitempty"`
+	Mentions      []MentionedUser `json:"mentions"`
 	LikesCount     int           `json:"likesCount"`
 	CommentsCount  int           `json:"commentsCount"`
 	RepostsCount   int           `json:"repostsCount"`
@@ -76,6 +82,15 @@ type PoemAuthor struct {
 	Username    string `json:"username"`
 	PhotoURL    string `json:"photoURL"`
 	IsEditor    bool   `json:"isEditor"`
+}
+
+// MentionedUser — embedded mention info in poem response
+// so the frontend never needs a separate user lookup for mentions
+type MentionedUser struct {
+	ID          string `json:"id"`
+	Username    string `json:"username"`
+	DisplayName string `json:"displayName"`
+	PhotoURL    string `json:"photoURL"`
 }
 
 // PoemsPage — paginated list response

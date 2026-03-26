@@ -120,10 +120,12 @@ func (s *service) UpdateProfile(ctx context.Context, userID string, updates map[
 
 	// Validate allowed fields
 	allowedFields := map[string]bool{
-		"displayName": true,
-		"photoURL":    true,
-		"bio":         true,
-		"preferences": true,
+		"displayName":   true,
+		"photoURL":      true,
+		"bio":           true,
+		"preferences":   true,
+		"coverImageURL": true,
+		"externalLink":  true,
 	}
 
 	filteredUpdates := make(map[string]interface{})

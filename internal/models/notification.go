@@ -20,7 +20,7 @@ const (
 const (
 	ResourceTypeConnection = "connection"
 	ResourceTypeChatRoom   = "chat_room"
-	// Future: "post", "comment", "user_profile", etc.
+	ResourceTypePoem       = "poem"        // ← ADD THIS
 )
 
 // Notification is the DB document stored in the "notifications" collection.

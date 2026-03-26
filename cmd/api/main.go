@@ -97,7 +97,7 @@ func main() {
 	socialRepo := social.NewRepository(db.Database)
 
 	poemRepo := poems.NewRepository(db.Database)
-	poemService := poems.NewService(poemRepo, userRepo, socialRepo)
+	poemService := poems.NewService(poemRepo, userRepo, socialRepo, notifService)
 	poemHandler := poems.NewHandler(poemService)
 
 	followRepo := follows.NewRepository(db.Database)

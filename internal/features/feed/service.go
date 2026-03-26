@@ -51,6 +51,8 @@ func (s *service) buildPoemResponse(ctx context.Context, poem *models.Poem, auth
 		AudioURL:       poem.AudioURL,
 		AudioDuration:  poem.AudioDuration,
 		CoverColor:     poem.CoverColor,
+		Description:    poem.Description,
+		TextAlign:      poem.TextAlign,
 		LikesCount:     poem.LikesCount,
 		CommentsCount:  poem.CommentsCount,
 		RepostsCount:   poem.RepostsCount,
@@ -73,6 +75,25 @@ func (s *service) buildPoemResponse(ctx context.Context, poem *models.Poem, auth
 
 	if resp.Hashtags == nil {
 		resp.Hashtags = []string{}
+	}
+
+	// Initialize mentions to empty slice (never nil — avoids JSON null)
+	resp.Mentions = []models.MentionedUser{}
+
+	// Populate if there are mentions
+	if len(poem.Mentions) > 0 {
+		for _, uid := range poem.Mentions {
+			user, err := s.userRepo.GetUserByID(ctx, uid)
+			if err != nil {
+				continue // skip deleted/invalid users
+			}
+			resp.Mentions = append(resp.Mentions, models.MentionedUser{
+				ID:          user.ID.Hex(),
+				Username:    user.Username,
+				DisplayName: user.DisplayName,
+				PhotoURL:    user.PhotoURL,
+			})
+		}
 	}
 
 	return resp

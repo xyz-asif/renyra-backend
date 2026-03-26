@@ -68,3 +68,6 @@ clean:
 db-reset:
 	mongosh chat_db --eval "db.dropDatabase()"
 
+## ngrok: Start ngrok tunnel
+ngrok:
+	ngrok http 8080

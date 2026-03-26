@@ -31,6 +31,9 @@ type PoemUpdateFields struct {
 	AudioURL      string
 	AudioDuration int
 	CoverColor    string
+	Description   string
+	TextAlign     string
+	Mentions      []bson.ObjectID
 }
 
 type repository struct {
@@ -85,6 +88,9 @@ func (r *repository) Update(ctx context.Context, poemID bson.ObjectID, fields Po
 			"audioUrl":      fields.AudioURL,
 			"audioDuration": fields.AudioDuration,
 			"coverColor":    fields.CoverColor,
+			"description":   fields.Description,
+			"textAlign":     fields.TextAlign,
+			"mentions":      fields.Mentions,
 			"updatedAt":     time.Now(),
 		},
 	}
