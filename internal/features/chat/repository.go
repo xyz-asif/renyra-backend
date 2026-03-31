@@ -30,6 +30,7 @@ type Repository interface {
 
 	SaveMessage(ctx context.Context, msg *models.Message) error
 	GetMessageByID(ctx context.Context, messageID bson.ObjectID) (*models.Message, error)
+	GetMessagesByIDs(ctx context.Context, messageIDs []bson.ObjectID) (map[bson.ObjectID]*models.Message, error)
 	// GetMessagesByRoom returns up to limit messages in the room.
 	// If beforeID is non-nil, only messages with _id < beforeID are returned
 	// (cursor-based / keyset pagination — O(1) regardless of page depth).
@@ -50,6 +51,11 @@ type Repository interface {
 	// Delete room and all associated messages
 	DeleteRoom(ctx context.Context, roomID bson.ObjectID) error
 	DeleteMessagesByRoom(ctx context.Context, roomID bson.ObjectID) error
+
+	// AdvanceMessagesToDelivered bulk-updates all "sent" messages in the user's
+	// rooms (where the user is NOT the sender) to "delivered".
+	// Returns the updated messages so callers can broadcast status changes.
+	AdvanceMessagesToDelivered(ctx context.Context, userID bson.ObjectID) ([]models.Message, error)
 }
 
 type repository struct {
@@ -412,6 +418,26 @@ func (r *repository) GetMessageByID(ctx context.Context, messageID bson.ObjectID
 	return &msg, nil
 }
 
+func (r *repository) GetMessagesByIDs(ctx context.Context, messageIDs []bson.ObjectID) (map[bson.ObjectID]*models.Message, error) {
+	if len(messageIDs) == 0 {
+		return make(map[bson.ObjectID]*models.Message), nil
+	}
+	cursor, err := r.messages.Find(ctx, bson.M{"_id": bson.M{"$in": messageIDs}})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+	result := make(map[bson.ObjectID]*models.Message, len(messageIDs))
+	for cursor.Next(ctx) {
+		var msg models.Message
+		if err := cursor.Decode(&msg); err != nil {
+			continue
+		}
+		result[msg.ID] = &msg
+	}
+	return result, cursor.Err()
+}
+
 func (r *repository) UpdateMessageStatus(ctx context.Context, messageID bson.ObjectID, status string) error {
 	update := bson.M{
 		"$set": bson.M{
@@ -527,4 +553,73 @@ func (r *repository) DeleteRoom(ctx context.Context, roomID bson.ObjectID) error
 func (r *repository) DeleteMessagesByRoom(ctx context.Context, roomID bson.ObjectID) error {
 	_, err := r.messages.DeleteMany(ctx, bson.M{"roomId": roomID})
 	return err
+}
+
+// AdvanceMessagesToDelivered finds all "sent" messages in the user's rooms
+// (where the user is a recipient, not the sender) and advances them to
+// "delivered". Returns the updated messages for WS notification.
+func (r *repository) AdvanceMessagesToDelivered(ctx context.Context, userID bson.ObjectID) ([]models.Message, error) {
+	// Step 1: Get all room IDs the user participates in
+	roomFilter := bson.M{"participants": userID}
+	cursor, err := r.rooms.Find(ctx, roomFilter, options.Find().SetProjection(bson.M{"_id": 1}))
+	if err != nil {
+		return nil, err
+	}
+	var roomDocs []struct {
+		ID bson.ObjectID `bson:"_id"`
+	}
+	if err = cursor.All(ctx, &roomDocs); err != nil {
+		cursor.Close(ctx)
+		return nil, err
+	}
+	cursor.Close(ctx)
+
+	if len(roomDocs) == 0 {
+		return nil, nil
+	}
+
+	roomIDs := make([]bson.ObjectID, len(roomDocs))
+	for i, rd := range roomDocs {
+		roomIDs[i] = rd.ID
+	}
+
+	// Step 2: Find messages that are 'sent' and not from this user
+	msgFilter := bson.M{
+		"roomId":   bson.M{"$in": roomIDs},
+		"senderId": bson.M{"$ne": userID},
+		"status":   models.MessageStatusSent,
+	}
+
+	// Fetch the message IDs before updating (for WS broadcast)
+	msgCursor, err := r.messages.Find(ctx, msgFilter)
+	if err != nil {
+		return nil, err
+	}
+	var msgs []models.Message
+	if err = msgCursor.All(ctx, &msgs); err != nil {
+		msgCursor.Close(ctx)
+		return nil, err
+	}
+	msgCursor.Close(ctx)
+
+	if len(msgs) == 0 {
+		return nil, nil
+	}
+
+	// Step 3: Bulk update to 'delivered'
+	update := bson.M{
+		"$set": bson.M{
+			"status":    models.MessageStatusDelivered,
+			"updatedAt": time.Now(),
+		},
+	}
+	result, err := r.messages.UpdateMany(ctx, msgFilter, update)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Printf("[REPO] AdvanceMessagesToDelivered: user=%s, advanced %d messages to delivered",
+		userID.Hex(), result.ModifiedCount)
+
+	return msgs, nil
 }

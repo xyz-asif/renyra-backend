@@ -72,6 +72,15 @@ func (h *Hub) writePump(client *clientContext) {
 func (h *Hub) Run() {
 	log.Printf("[HUB] Hub event loop started")
 	for {
+		// Wrap each iteration so a panic in one event (e.g. a nil-pointer in a
+		// callback) is recovered and logged rather than crashing the whole hub
+		// and dropping every active WebSocket connection.
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[HUB] panic recovered in event loop: %v", r)
+				}
+			}()
 		select {
 		case client := <-h.register:
 			h.clientsMu.Lock()
@@ -81,45 +90,74 @@ func (h *Hub) Run() {
 			}
 			h.clients[client.userID][client] = true
 			h.clientsMu.Unlock()
-			
+
 			// Cancel grace period if user reconnected
 			h.CancelGracePeriod(client.userID)
-			
+
+			// Clear any stale manualOffline flag from a previous disconnect.
+			// When a new WS connects, the user is definitively online — any
+			// leftover flag (e.g. from a REST /disconnect that raced with
+			// the old WS close) must be wiped so IsUserOnline() is accurate
+			// immediately, even before the frontend sends presence_status.
+			h.manualMu.Lock()
+			delete(h.manualOffline, client.userID)
+			h.manualMu.Unlock()
+
 			// Start the dedicated writer for this connection
 			go h.writePump(client)
-			
-			// Trigger online callback if this was the first connection
+
+			// Trigger online callback in a goroutine — broadcastUserPresence does
+			// a DB query; running it synchronously would block the entire hub
+			// event loop for all users for the duration of that query.
 			if wasOffline && h.onUserOnline != nil {
-				h.onUserOnline(client.userID)
+				go h.onUserOnline(client.userID)
 			}
 
 		case client := <-h.unregister:
+			// Capture all state under the lock, then act outside it.
+			// Calling onUserOffline or startGracePeriod while holding clientsMu
+			// causes two problems:
+			//   1. onUserOffline does a DB query — blocks the hub loop.
+			//   2. startGracePeriod acquires graceMu while clientsMu is held;
+			//      IsUserOnline acquires graceMu then clientsMu — ABBA deadlock.
+			userID := client.userID
+			var wasManuallyOffline, lastConn bool
+
 			h.clientsMu.Lock()
-			if conns, ok := h.clients[client.userID]; ok {
+			if conns, ok := h.clients[userID]; ok {
 				if _, exists := conns[client]; exists {
 					delete(conns, client)
 					close(client.send) // signals writePump to exit
-					remainingConns := len(conns)
-					if remainingConns == 0 {
-						delete(h.clients, client.userID)
-						// Clear manual presence — user has no connections, they're truly offline
-						h.manualMu.Lock()
-						wasManuallyOffline := h.manualOffline[client.userID]
-						delete(h.manualOffline, client.userID)
-						h.manualMu.Unlock()
-
-						// Skip grace period if user was manually marked offline
-						if wasManuallyOffline {
-							if h.onUserOffline != nil {
-								h.onUserOffline(client.userID)
-							}
-						} else {
-							h.startGracePeriod(client.userID)
-						}
+					if len(conns) == 0 {
+						delete(h.clients, userID)
+						lastConn = true
 					}
 				}
 			}
-			h.clientsMu.Unlock()
+			h.clientsMu.Unlock() // release BEFORE acquiring any other lock
+
+			// Read and clear manualOffline AFTER releasing clientsMu to avoid
+			// ABBA deadlock: IsUserOnline acquires manualMu then clientsMu,
+			// so we must never hold clientsMu while acquiring manualMu.
+			if lastConn {
+				h.manualMu.Lock()
+				wasManuallyOffline = h.manualOffline[userID]
+				delete(h.manualOffline, userID)
+				h.manualMu.Unlock()
+			}
+
+			if lastConn {
+				if wasManuallyOffline {
+					// Skip grace period — user explicitly went offline.
+					// Run in goroutine: broadcastUserPresence does a DB query.
+					if h.onUserOffline != nil {
+						go h.onUserOffline(userID)
+					}
+				} else {
+					// clientsMu is no longer held here — no deadlock risk.
+					h.startGracePeriod(userID)
+				}
+			}
 
 		case msg := <-h.broadcast:
 			h.clientsMu.RLock()
@@ -135,6 +173,7 @@ func (h *Hub) Run() {
 			}
 			h.clientsMu.RUnlock()
 		}
+		}() // end of per-iteration panic-recovery wrapper
 	}
 }
 
@@ -273,14 +312,20 @@ func (h *Hub) OnlineUserCount() int {
 func (h *Hub) DisconnectUser(userID string) {
 	h.clientsMu.RLock()
 	conns, ok := h.clients[userID]
-	h.clientsMu.RUnlock()
-	
-	if !ok {
+	if !ok || len(conns) == 0 {
+		h.clientsMu.RUnlock()
 		return
 	}
-	
-	// Close all connections for this user
+	// Snapshot current connections — any new WS that registers after
+	// this point (e.g. user quickly foregrounds) won't be in the slice.
+	snapshot := make([]*clientContext, 0, len(conns))
 	for client := range conns {
+		snapshot = append(snapshot, client)
+	}
+	h.clientsMu.RUnlock()
+
+	// Close only the snapshotted connections
+	for _, client := range snapshot {
 		client.conn.Close()
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/gofiber/contrib/websocket"
@@ -58,7 +59,12 @@ func NewService(repo Repository, userRepo users.Repository, connRepo connections
 
 	// Wire presence callbacks to avoid circular dependency
 	hub.SetPresenceCallbacks(
-		func(userID string) { svc.broadcastUserPresence(userID, true) },
+		func(userID string) {
+			svc.broadcastUserPresence(userID, true)
+			// Catch-up: advance any "sent" messages to "delivered" now that
+			// this user is online, and notify the senders.
+			go svc.catchUpDelivery(userID)
+		},
 		func(userID string) { svc.broadcastUserPresence(userID, false) },
 	)
 
@@ -164,7 +170,7 @@ func (s *service) SendMessage(ctx context.Context, senderIDStr, roomIDStr, conte
 		log.Printf("SendMessage: failed to increment unread counts for room %s: %v", roomIDStr, err)
 	}
 
-	resp := s.buildMessageResponse(ctx, msg, nil)
+	resp := s.buildMessageResponse(ctx, msg, nil, nil)
 
 	userIDs := make([]string, len(room.Participants))
 	for i, p := range room.Participants {
@@ -267,12 +273,25 @@ func (s *service) GetRoomMessages(ctx context.Context, userIDStr, roomIDStr stri
 		msgs = msgs[:limit]
 	}
 
+	// Batch fetch all reply-to messages in one query (avoids N+1)
+	replyIDs := make([]bson.ObjectID, 0)
+	for _, m := range msgs {
+		if m.ReplyToID != nil {
+			replyIDs = append(replyIDs, *m.ReplyToID)
+		}
+	}
+	replyMap, err := s.repo.GetMessagesByIDs(ctx, replyIDs)
+	if err != nil {
+		log.Printf("GetRoomMessages: failed to batch fetch reply messages: %v", err)
+		replyMap = make(map[bson.ObjectID]*models.Message)
+	}
+
 	// Batch fetch all unique user IDs (senders + reply senders)
 	userIDSet := make(map[bson.ObjectID]bool)
 	for _, m := range msgs {
 		userIDSet[m.SenderID] = true
 		if m.ReplyToID != nil {
-			if replyMsg, err := s.repo.GetMessageByID(ctx, *m.ReplyToID); err == nil {
+			if replyMsg, ok := replyMap[*m.ReplyToID]; ok {
 				userIDSet[replyMsg.SenderID] = true
 			}
 		}
@@ -289,7 +308,9 @@ func (s *service) GetRoomMessages(ctx context.Context, userIDStr, roomIDStr stri
 
 	responses := make([]models.MessageResponse, 0, len(msgs))
 	for _, m := range msgs {
-		responses = append(responses, *s.buildMessageResponse(ctx, &m, userMap))
+		// Pass replyMap so buildMessageResponse uses the already-fetched batch
+		// instead of issuing one GetMessageByID per reply (N+1 completion).
+		responses = append(responses, *s.buildMessageResponse(ctx, &m, userMap, replyMap))
 	}
 
 	// Reverse from newest-first (DB order) to chronological for the client
@@ -617,6 +638,20 @@ func (s *service) DeleteChat(ctx context.Context, userIDStr, roomIDStr string) e
 		return err
 	}
 
+	// Notify all participants so their chat lists remove the room immediately
+	participantIDs := make([]string, 0, len(room.Participants))
+	for _, p := range room.Participants {
+		participantIDs = append(participantIDs, p.Hex())
+	}
+	_ = s.hub.SendToUsers(participantIDs, models.WSMessage{
+		Type:   "room_deleted",
+		RoomID: roomIDStr,
+		Payload: map[string]string{
+			"roomId":    roomIDStr,
+			"deletedBy": userIDStr,
+		},
+	})
+
 	// For direct rooms, also delete the connection
 	if room.Type == models.RoomTypeDirect && len(room.Participants) == 2 {
 		var otherUserID bson.ObjectID
@@ -767,18 +802,21 @@ func (s *service) UpdateMessageReaction(ctx context.Context, userIDStr, messageI
 // ForceDisconnect manually marks a user as offline and closes WebSocket connections.
 // Call this when the app terminates or goes to background.
 // The actual offline broadcast will happen when WebSocket connections close.
+//
+// By setting manual presence BEFORE disconnecting, we ensure the async unregister
+// channel handler sees the manualOffline flag and skips the 2s grace period.
 func (s *service) ForceDisconnect(userID string) {
 	log.Printf("[WS] ForceDisconnect called for user %s", userID)
-	
-	// Mark as manually offline first
-	s.hub.SetManualPresence(userID, false)
-	
+
 	// Cancel any grace period
 	s.hub.CancelGracePeriod(userID)
-	
+
+	// Race Guard Fix: Set manual presence first so unregister channel catches it instantly.
+	s.hub.SetManualPresence(userID, false)
+
 	// Close all WebSocket connections for this user
 	s.hub.DisconnectUser(userID)
-	
+
 	log.Printf("[WS] User %s forcefully marked as offline", userID)
 }
 
@@ -827,6 +865,44 @@ func (s *service) broadcastUserPresence(userID string, online bool) {
 			"userId": userID,
 		},
 	})
+}
+
+// catchUpDelivery advances all "sent" messages in the user's rooms to
+// "delivered" and broadcasts the status change to the original senders.
+// Called when a user comes online (WS register or presence_status=true).
+func (s *service) catchUpDelivery(userID string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	uid, err := bson.ObjectIDFromHex(userID)
+	if err != nil {
+		return
+	}
+
+	msgs, err := s.repo.AdvanceMessagesToDelivered(ctx, uid)
+	if err != nil {
+		log.Printf("catchUpDelivery: error advancing messages for user %s: %v", userID, err)
+		return
+	}
+
+	if len(msgs) == 0 {
+		return
+	}
+
+	log.Printf("[DELIVERY] Catch-up: advanced %d messages to 'delivered' for user %s", len(msgs), userID)
+
+	// Notify each sender that their message was delivered
+	for _, msg := range msgs {
+		_ = s.hub.SendMessage(msg.SenderID.Hex(), models.WSMessage{
+			Type:   "message_status_changed",
+			RoomID: msg.RoomID.Hex(),
+			Payload: map[string]string{
+				"messageId": msg.ID.Hex(),
+				"status":    models.MessageStatusDelivered,
+				"markedBy":  userID,
+			},
+		})
+	}
 }
 
 // sendPresenceSync sends the current online status of all friends and chat participants to the requesting user.
@@ -907,13 +983,14 @@ func (s *service) HandleWebSocket(c *websocket.Conn, userID string) {
 
 	// Set up read deadline - 15 seconds to detect dead connections faster
 	// This will be reset on every message read
-	if err := c.SetReadDeadline(time.Now().Add(15 * time.Second)); err != nil {
+	if err := c.SetReadDeadline(time.Now().Add(45 * time.Second)); err != nil {
 		log.Printf("[WS ERROR] Failed to set read deadline for user %s: %v", userID, err)
 		return
 	}
 
-	// Track last pong time for connection health
-	lastPongTime := time.Now()
+	// Track last pong time for connection health (atomic to avoid data race with pingPump)
+	var lastPongNano atomic.Int64
+	lastPongNano.Store(time.Now().UnixNano())
 
 	client := &clientContext{
 		userID: userID,
@@ -933,7 +1010,7 @@ func (s *service) HandleWebSocket(c *websocket.Conn, userID string) {
 
 	// Start ping pump for keepalive
 	stopPingPump := make(chan struct{})
-	go s.pingPump(c, client, stopPingPump, &lastPongTime)
+	go s.pingPump(c, client, stopPingPump, &lastPongNano)
 
 	defer func() {
 		close(stopPingPump)
@@ -943,7 +1020,7 @@ func (s *service) HandleWebSocket(c *websocket.Conn, userID string) {
 	messageCount := 0
 	for {
 		// Reset read deadline on every message (including JSON pings)
-		if err := c.SetReadDeadline(time.Now().Add(15 * time.Second)); err != nil {
+		if err := c.SetReadDeadline(time.Now().Add(45 * time.Second)); err != nil {
 			log.Printf("[WS ERROR] Failed to reset read deadline for user %s: %v", userID, err)
 			break
 		}
@@ -966,15 +1043,15 @@ func (s *service) HandleWebSocket(c *websocket.Conn, userID string) {
 		}
 		
 		// Reset deadline after each message
-		if err := c.SetReadDeadline(time.Now().Add(15 * time.Second)); err != nil {
+		if err := c.SetReadDeadline(time.Now().Add(45 * time.Second)); err != nil {
 			log.Printf("[WS ERROR] Failed to reset read deadline for user %s: %v", userID, err)
 			break
 		}
 
 		switch msg.Type {
 		case "pong":
-			// Client responded to our ping - update last pong time
-			lastPongTime = time.Now()
+			// Client responded to our ping - update last pong time (atomic write)
+			lastPongNano.Store(time.Now().UnixNano())
 
 		case "ping":
 			// Client sent ping, respond with pong (legacy support)
@@ -1110,7 +1187,10 @@ func (s *service) buildRoomResponse(ctx context.Context, room *models.Room, forU
 	return resp, nil
 }
 
-func (s *service) buildMessageResponse(ctx context.Context, msg *models.Message, userMap map[bson.ObjectID]*models.User) *models.MessageResponse {
+// replyMap is optional: when non-nil (batch context) it is used instead of a DB
+// lookup, eliminating the N+1 for pages of messages with reply-to fields.
+// Pass nil for single-message contexts (SendMessage) where a batch isn't needed.
+func (s *service) buildMessageResponse(ctx context.Context, msg *models.Message, userMap map[bson.ObjectID]*models.User, replyMap map[bson.ObjectID]*models.Message) *models.MessageResponse {
 	resp := &models.MessageResponse{
 		ID:        msg.ID.Hex(),
 		RoomID:    msg.RoomID.Hex(),
@@ -1147,9 +1227,18 @@ func (s *service) buildMessageResponse(ctx context.Context, msg *models.Message,
 		resp.SenderPhotoURL = sender.PhotoURL
 	}
 
-	// Populate reply-to message (one level deep only)
+	// Populate reply-to message (one level deep only).
+	// Use the pre-fetched replyMap when available to avoid a per-message DB query.
 	if msg.ReplyToID != nil {
-		if replyMsg, err := s.repo.GetMessageByID(ctx, *msg.ReplyToID); err == nil {
+		var replyMsg *models.Message
+		if replyMap != nil {
+			replyMsg = replyMap[*msg.ReplyToID] // O(1) map lookup — no DB call
+		}
+		if replyMsg == nil {
+			// Fallback: single-message context or missing from batch (e.g. deleted)
+			replyMsg, _ = s.repo.GetMessageByID(ctx, *msg.ReplyToID)
+		}
+		if replyMsg != nil {
 			replyResp := &models.MessageResponse{
 				ID:        replyMsg.ID.Hex(),
 				RoomID:    replyMsg.RoomID.Hex(),
@@ -1178,7 +1267,7 @@ func (s *service) buildMessageResponse(ctx context.Context, msg *models.Message,
 // pingPump sends periodic ping messages and monitors connection health.
 // If no pong received within 10 seconds, closes the connection.
 // Backend sends "ping", client should respond with "pong".
-func (s *service) pingPump(c *websocket.Conn, client *clientContext, stop chan struct{}, lastPongTime *time.Time) {
+func (s *service) pingPump(c *websocket.Conn, client *clientContext, stop chan struct{}, lastPongNano *atomic.Int64) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("[WS PANIC] pingPump panic recovered for user %s: %v", client.userID, r)
@@ -1203,8 +1292,9 @@ func (s *service) pingPump(c *websocket.Conn, client *clientContext, stop chan s
 				return // client was unregistered, stop pinging
 			}
 
-			// Check if we've received a pong in the last 35 seconds
-			if time.Since(*lastPongTime) > 35*time.Second {
+			// Check if we've received a pong in the last 35 seconds (atomic read)
+			lastPong := time.Unix(0, lastPongNano.Load())
+			if time.Since(lastPong) > 35*time.Second {
 				log.Printf("[WS HEALTH] No pong from user %s for 35s, closing connection", client.userID)
 				c.Close()
 				return

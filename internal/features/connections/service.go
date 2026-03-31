@@ -201,40 +201,43 @@ func (s *service) AcceptRequest(ctx context.Context, userIDStr, connectionIDStr 
 		}
 	}
 
-	// Broadcast to both users via WebSocket that they are now connected
+	// Broadcast to both users via WebSocket that they are now connected.
+	// Only send if the room was successfully created — sending with a null room
+	// causes the frontend to silently drop the event, leaving the user unable
+	// to see the new chat until a manual refresh.
 	if s.hub != nil {
 		senderID := conn.SenderID.Hex()
 		receiverID := conn.ReceiverID.Hex()
 
-		// Notify sender with their room perspective
-		senderPayload := map[string]interface{}{
-			"connectionId": conn.ID.Hex(),
-			"senderId":     senderID,
-			"receiverId":   receiverID,
-			"status":       "accepted",
-			"message":      "You are now connected! Start chatting.",
-			"room":         senderRoom,
+		if senderRoom != nil {
+			senderPayload := map[string]interface{}{
+				"connectionId": conn.ID.Hex(),
+				"senderId":     senderID,
+				"receiverId":   receiverID,
+				"status":       "accepted",
+				"message":      "You are now connected! Start chatting.",
+				"room":         senderRoom,
+			}
+			_ = s.hub.SendMessage(senderID, models.WSMessage{
+				Type:    "connection_accepted",
+				Payload: senderPayload,
+			})
 		}
-		senderMsg := models.WSMessage{
-			Type:    "connection_accepted",
-			Payload: senderPayload,
-		}
-		_ = s.hub.SendMessage(senderID, senderMsg)
 
-		// Notify receiver with their room perspective
-		receiverPayload := map[string]interface{}{
-			"connectionId": conn.ID.Hex(),
-			"senderId":     senderID,
-			"receiverId":   receiverID,
-			"status":       "accepted",
-			"message":      "You are now connected! Start chatting.",
-			"room":         receiverRoom,
+		if receiverRoom != nil {
+			receiverPayload := map[string]interface{}{
+				"connectionId": conn.ID.Hex(),
+				"senderId":     senderID,
+				"receiverId":   receiverID,
+				"status":       "accepted",
+				"message":      "You are now connected! Start chatting.",
+				"room":         receiverRoom,
+			}
+			_ = s.hub.SendMessage(receiverID, models.WSMessage{
+				Type:    "connection_accepted",
+				Payload: receiverPayload,
+			})
 		}
-		receiverMsg := models.WSMessage{
-			Type:    "connection_accepted",
-			Payload: receiverPayload,
-		}
-		_ = s.hub.SendMessage(receiverID, receiverMsg)
 
 		log.Printf("[CONN] Broadcasted connection_accepted to sender %s and receiver %s", senderID, receiverID)
 	}

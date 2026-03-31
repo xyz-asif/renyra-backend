@@ -75,12 +75,8 @@ func (h *Handler) GetUserRooms(c *fiber.Ctx) error {
 	// Parse query parameters
 	searchQuery := c.Query("q", "")
 	limit := c.QueryInt("limit", 20)
-	if limit > 50 {
-		limit = 50
-	}
 	offset := c.QueryInt("offset", 0)
 
-	// Cap limit to prevent abuse
 	if limit > 50 {
 		limit = 50
 	}
