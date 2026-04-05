@@ -26,7 +26,7 @@ type service struct {
 	followRepo  follows.Repository
 	userRepo    users.Repository
 	socialRepo  social.Repository
-	poemService poems.Service // reuse poem service's toResponse helper indirectly if needed
+	poemService poems.Service
 }
 
 func NewService(repo Repository, followRepo follows.Repository, userRepo users.Repository, socialRepo social.Repository) Service {
@@ -38,9 +38,23 @@ func NewService(repo Repository, followRepo follows.Repository, userRepo users.R
 	}
 }
 
-func (s *service) buildPoemResponse(ctx context.Context, poem *models.Poem, author *models.User, isLiked, isReposted bool, originalPoem *models.Poem, originalAuthor *models.User) models.PoemResponse {
+// FIX: buildPoemResponse now accepts likedMap and repostedMap so it can look up
+// the correct social state for ANY poem, including originals nested inside reposts.
+// Previously, isLiked/isReposted were passed as direct booleans, and the recursive
+// call for originalPoem hardcoded them to false.
+func (s *service) buildPoemResponse(
+	ctx context.Context,
+	poem *models.Poem,
+	author *models.User,
+	likedMap map[string]bool,
+	repostedMap map[string]bool,
+	originalPoem *models.Poem,
+	originalAuthor *models.User,
+) models.PoemResponse {
+	poemIDHex := poem.ID.Hex()
+
 	resp := models.PoemResponse{
-		ID:             poem.ID.Hex(),
+		ID:             poemIDHex,
 		Title:          poem.Title,
 		ContentJSON:    poem.ContentJSON,
 		PlainText:      poem.PlainText,
@@ -56,16 +70,17 @@ func (s *service) buildPoemResponse(ctx context.Context, poem *models.Poem, auth
 		LikesCount:     poem.LikesCount,
 		CommentsCount:  poem.CommentsCount,
 		RepostsCount:   poem.RepostsCount,
-		IsLikedByMe:    isLiked,
-		IsRepostedByMe: isReposted,
+		IsLikedByMe:    likedMap[poemIDHex],
+		IsRepostedByMe: repostedMap[poemIDHex],
 		IsRepost:       poem.IsRepost,
 		CreatedAt:      poem.CreatedAt,
 		UpdatedAt:      poem.UpdatedAt,
 	}
 
-	// Embed original poem if it's a repost and original exists
+	// FIX: Embed original poem with CORRECT social state from the maps,
+	// not hardcoded false. The maps now include original poem IDs too.
 	if poem.IsRepost && originalPoem != nil {
-		origResp := s.buildPoemResponse(ctx, originalPoem, originalAuthor, false, false, nil, nil)
+		origResp := s.buildPoemResponse(ctx, originalPoem, originalAuthor, likedMap, repostedMap, nil, nil)
 		resp.OriginalPoem = &origResp
 	}
 
@@ -155,13 +170,23 @@ func (s *service) GetHomeFeed(ctx context.Context, callerIDStr string, limit int
 	}
 	originalPoemsMap, _ := s.repo.GetPoemsByIDs(ctx, originalIDs)
 
-	// Batch check like/repost status
+	// FIX: Batch check like/repost status for BOTH top-level poems AND original
+	// poems inside reposts. Previously only top-level IDs were checked, so
+	// originalPoem always got isLikedByMe=false.
 	var likedMap map[string]bool
 	var repostedMap map[string]bool
 	if callerIDStr != "" {
-		ids := make([]bson.ObjectID, 0, len(poemDocs))
+		// Collect all poem IDs that need social state: top-level + originals
+		idSet := make(map[bson.ObjectID]bool)
 		for _, p := range poemDocs {
-			ids = append(ids, p.ID)
+			idSet[p.ID] = true
+		}
+		for _, origID := range originalIDs {
+			idSet[origID] = true
+		}
+		ids := make([]bson.ObjectID, 0, len(idSet))
+		for id := range idSet {
+			ids = append(ids, id)
 		}
 		likedMap, _ = s.socialRepo.IsPoemLikedMany(ctx, callerID, ids)
 		repostedMap, _ = s.socialRepo.IsPoemRepostedMany(ctx, callerID, ids)
@@ -197,14 +222,14 @@ func (s *service) GetHomeFeed(ctx context.Context, callerIDStr string, limit int
 				originalAuthor = authorMap[op.AuthorID]
 			}
 		}
-		responses = append(responses, s.buildPoemResponse(ctx, &p, author, likedMap[p.ID.Hex()], repostedMap[p.ID.Hex()], originalPoem, originalAuthor))
+		// FIX: Pass maps instead of direct booleans
+		responses = append(responses, s.buildPoemResponse(ctx, &p, author, likedMap, repostedMap, originalPoem, originalAuthor))
 	}
 
 	return &models.FeedPage{Poems: responses, HasMore: hasMore}, nil
 }
 
 // GetExploreFeed returns poems weighted by engagement score with offset pagination.
-// Handles N+1 queries by batch-fetching all authors.
 func (s *service) GetExploreFeed(ctx context.Context, userID string, hashtag string, limit int, offset int) (*models.FeedPage, error) {
 	if limit <= 0 {
 		limit = 20
@@ -253,17 +278,24 @@ func (s *service) GetExploreFeed(ctx context.Context, userID string, hashtag str
 		authorMap = make(map[bson.ObjectID]*models.User)
 	}
 
+	// Initialize maps if nil (no authenticated user)
+	if likedMap == nil {
+		likedMap = make(map[string]bool)
+	}
+	if repostedMap == nil {
+		repostedMap = make(map[string]bool)
+	}
+
 	responses := make([]models.PoemResponse, 0, len(poemDocs))
 	for _, p := range poemDocs {
 		author := authorMap[p.AuthorID]
-		responses = append(responses, s.buildPoemResponse(ctx, &p, author, likedMap[p.ID.Hex()], repostedMap[p.ID.Hex()], nil, nil))
+		responses = append(responses, s.buildPoemResponse(ctx, &p, author, likedMap, repostedMap, nil, nil))
 	}
 
 	return &models.FeedPage{Poems: responses, HasMore: hasMore}, nil
 }
 
 // GetAudioFeed retrieves a timeline of audio poems.
-// Handles N+1 queries by batch-fetching all authors.
 func (s *service) GetAudioFeed(ctx context.Context, limit int, offset int) (*models.FeedPage, error) {
 	if limit <= 0 {
 		limit = 20
@@ -297,10 +329,14 @@ func (s *service) GetAudioFeed(ctx context.Context, limit int, offset int) (*mod
 		authorMap = make(map[bson.ObjectID]*models.User)
 	}
 
+	// Empty maps — audio feed has no auth context currently
+	emptyLiked := make(map[string]bool)
+	emptyReposted := make(map[string]bool)
+
 	responses := make([]models.PoemResponse, 0, len(poemDocs))
 	for _, p := range poemDocs {
 		author := authorMap[p.AuthorID]
-		responses = append(responses, s.buildPoemResponse(ctx, &p, author, false, false, nil, nil))
+		responses = append(responses, s.buildPoemResponse(ctx, &p, author, emptyLiked, emptyReposted, nil, nil))
 	}
 
 	return &models.FeedPage{Poems: responses, HasMore: hasMore}, nil
@@ -351,10 +387,13 @@ func (s *service) SearchPoems(ctx context.Context, query string, limit int, befo
 		authorMap = make(map[bson.ObjectID]*models.User)
 	}
 
+	emptyLiked := make(map[string]bool)
+	emptyReposted := make(map[string]bool)
+
 	responses := make([]models.PoemResponse, 0, len(poemDocs))
 	for _, p := range poemDocs {
 		author := authorMap[p.AuthorID]
-		responses = append(responses, s.buildPoemResponse(ctx, &p, author, false, false, nil, nil))
+		responses = append(responses, s.buildPoemResponse(ctx, &p, author, emptyLiked, emptyReposted, nil, nil))
 	}
 
 	return &models.PoemSearchPage{Poems: responses, HasMore: hasMore}, nil
@@ -408,5 +447,3 @@ func (s *service) SearchUsers(ctx context.Context, query string, callerIDStr str
 
 	return &models.UserSearchPage{Users: results, HasMore: hasMore}, nil
 }
-
-

@@ -31,7 +31,7 @@ type Service interface {
 
 	// Reposts
 	ToggleRepost(ctx context.Context, userIDStr, poemIDStr string) (bool, int, error)
-	GetUserReposts(ctx context.Context, userIDStr string, limit int, before string) (*models.FeedPage, error)
+	GetUserReposts(ctx context.Context, userIDStr string, callerIDStr string, limit int, before string) (*models.FeedPage, error)
 }
 
 type service struct {
@@ -614,7 +614,7 @@ func (s *service) ToggleRepost(ctx context.Context, userIDStr, poemIDStr string)
 	return true, updated.RepostsCount, nil
 }
 
-func (s *service) GetUserReposts(ctx context.Context, userIDStr string, limit int, before string) (*models.FeedPage, error) {
+func (s *service) GetUserReposts(ctx context.Context, userIDStr string, callerIDStr string, limit int, before string) (*models.FeedPage, error) {
 	userID, err := bson.ObjectIDFromHex(userIDStr)
 	if err != nil {
 		return nil, errors.New("invalid user id")
@@ -662,17 +662,41 @@ func (s *service) GetUserReposts(ctx context.Context, userIDStr string, limit in
 		reposts = reposts[:limit]
 	}
 
+	var likedMap map[string]bool
+	var repostedMap map[string]bool
+	if callerIDStr != "" {
+		callerID, err := bson.ObjectIDFromHex(callerIDStr)
+		if err == nil {
+			var originalIDs []bson.ObjectID
+			for _, rp := range reposts {
+				if rp.OriginalID != nil {
+					originalIDs = append(originalIDs, *rp.OriginalID)
+				}
+			}
+			if len(originalIDs) > 0 {
+				likedMap, _ = s.repo.IsPoemLikedMany(ctx, callerID, originalIDs)
+				repostedMap, _ = s.repo.IsPoemRepostedMany(ctx, callerID, originalIDs)
+			}
+		}
+	}
+	if likedMap == nil {
+		likedMap = make(map[string]bool)
+	}
+	if repostedMap == nil {
+		repostedMap = make(map[string]bool)
+	}
+
 	// For each repost, fetch the original poem and embed it
 	responses := make([]models.PoemResponse, 0, len(reposts))
 	for _, rp := range reposts {
-		resp := s.buildRepostResponse(ctx, &rp)
+		resp := s.buildRepostResponse(ctx, &rp, likedMap, repostedMap)
 		responses = append(responses, resp)
 	}
 
 	return &models.FeedPage{Poems: responses, HasMore: hasMore}, nil
 }
 
-func (s *service) buildRepostResponse(ctx context.Context, rp *models.Poem) models.PoemResponse {
+func (s *service) buildRepostResponse(ctx context.Context, rp *models.Poem, likedMap map[string]bool, repostedMap map[string]bool) models.PoemResponse {
 	resp := models.PoemResponse{
 		ID:        rp.ID.Hex(),
 		IsRepost:  true,
@@ -696,8 +720,9 @@ func (s *service) buildRepostResponse(ctx context.Context, rp *models.Poem) mode
 	if rp.OriginalID != nil {
 		var original models.Poem
 		if err := s.poemsCol.FindOne(ctx, bson.M{"_id": *rp.OriginalID}).Decode(&original); err == nil {
+			origIDHex := original.ID.Hex()
 			originalResp := models.PoemResponse{
-				ID:            original.ID.Hex(),
+				ID:            origIDHex,
 				Title:         original.Title,
 				ContentJSON:   original.ContentJSON,
 				PlainText:     original.PlainText,
@@ -710,6 +735,8 @@ func (s *service) buildRepostResponse(ctx context.Context, rp *models.Poem) mode
 				LikesCount:    original.LikesCount,
 				CommentsCount: original.CommentsCount,
 				RepostsCount:  original.RepostsCount,
+				IsLikedByMe:    likedMap[origIDHex],
+				IsRepostedByMe: repostedMap[origIDHex],
 				CreatedAt:     original.CreatedAt,
 			}
 			originalAuthor, _ := s.userRepo.GetUserByID(ctx, original.AuthorID)
@@ -728,6 +755,11 @@ func (s *service) buildRepostResponse(ctx context.Context, rp *models.Poem) mode
 			resp.OriginalPoem = &originalResp
 		}
 	}
+
+	if resp.Hashtags == nil {
+		resp.Hashtags = []string{}
+	}
+	resp.Mentions = append([]models.MentionedUser{}, resp.Mentions...)
 
 	return resp
 }

@@ -131,7 +131,11 @@ func (h *Handler) GetUserReposts(c *fiber.Ctx) error {
 		limit = 50
 	}
 	before := c.Query("before")
-	page, err := h.service.GetUserReposts(c.Context(), userID, limit, before)
+	callerID := ""
+	if user, ok := c.Locals("user").(*models.User); ok {
+		callerID = user.ID.Hex()
+	}
+	page, err := h.service.GetUserReposts(c.Context(), userID, callerID, limit, before)
 	if err != nil {
 		return response.BadRequest(c, err.Error())
 	}
