@@ -16,6 +16,7 @@ type Repository interface {
 	GetAudioFeed(ctx context.Context, limit int, offset int) ([]models.Poem, error)
 	SearchPoems(ctx context.Context, query string, limit int, beforeID *bson.ObjectID) ([]models.Poem, error)
 	SearchUsers(ctx context.Context, query string, limit int, skip int) ([]models.User, int64, error)
+	GetPoemsByIDs(ctx context.Context, ids []bson.ObjectID) (map[bson.ObjectID]models.Poem, error)
 }
 
 type repository struct {
@@ -245,4 +246,34 @@ func (r *repository) GetAudioFeed(ctx context.Context, limit int, offset int) ([
 		return nil, err
 	}
 	return result, nil
+}
+
+// GetPoemsByIDs returns a map of poems by their IDs.
+func (r *repository) GetPoemsByIDs(ctx context.Context, ids []bson.ObjectID) (map[bson.ObjectID]models.Poem, error) {
+	if len(ids) == 0 {
+		return make(map[bson.ObjectID]models.Poem), nil
+	}
+
+	filter := bson.M{"_id": bson.M{"$in": ids}}
+	
+	// Ensure we only fetch public un-deleted original poems just to be safe
+	filter["isDeleted"] = false
+
+	cursor, err := r.poems.Find(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var poems []models.Poem
+	if err := cursor.All(ctx, &poems); err != nil {
+		return nil, err
+	}
+
+	poemMap := make(map[bson.ObjectID]models.Poem, len(poems))
+	for _, p := range poems {
+		poemMap[p.ID] = p
+	}
+
+	return poemMap, nil
 }

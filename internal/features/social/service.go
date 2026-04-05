@@ -308,8 +308,8 @@ func (s *service) processMentions(ctx context.Context, content string, authorID 
 			RecipientID:  mentionedUser.ID,
 			ActorID:      authorID,
 			Type:         models.NotifTypeMentioned,
-			ResourceType: "comment",
-			ResourceID:   commentIDStr,
+			ResourceType: "poem",
+			ResourceID:   poemIDStr,
 			Title:        name,
 			Body:         "mentioned you in a comment",
 		})
@@ -387,8 +387,8 @@ func (s *service) GetComments(ctx context.Context, poemIDStr, callerIDStr string
 	return &models.CommentsPage{Comments: responses, HasMore: hasMore}, nil
 }
 
-func (s *service) DeleteComment(ctx context.Context, authorIDStr, commentIDStr string) error {
-	authorID, err := bson.ObjectIDFromHex(authorIDStr)
+func (s *service) DeleteComment(ctx context.Context, requesterIDStr, commentIDStr string) error {
+	requesterID, err := bson.ObjectIDFromHex(requesterIDStr)
 	if err != nil {
 		return errors.New("invalid author id")
 	}
@@ -401,12 +401,28 @@ func (s *service) DeleteComment(ctx context.Context, authorIDStr, commentIDStr s
 	if err != nil {
 		return errors.New("comment not found")
 	}
-	if comment.AuthorID != authorID {
-		return errors.New("unauthorized: only the comment author can delete this")
-	}
 
-	if err := s.repo.SoftDeleteComment(ctx, commentID, authorID); err != nil {
-		return err
+	isCommentAuthor := comment.AuthorID == requesterID
+
+	if !isCommentAuthor {
+		// Check if the requester is the poem author — poem authors can remove
+		// any comment from their own poem.
+		var poem models.Poem
+		if findErr := s.poemsCol.FindOne(ctx, bson.M{"_id": comment.PoemID, "isDeleted": false}).Decode(&poem); findErr != nil {
+			return errors.New("unauthorized: you can only delete your own comments")
+		}
+		if poem.AuthorID != requesterID {
+			return errors.New("unauthorized: you can only delete your own comments")
+		}
+		// Poem author path — delete without author filter
+		if err := s.repo.ForceDeleteComment(ctx, commentID); err != nil {
+			return err
+		}
+	} else {
+		// Comment author path — delete with author filter
+		if err := s.repo.SoftDeleteComment(ctx, commentID, requesterID); err != nil {
+			return err
+		}
 	}
 
 	go func() {

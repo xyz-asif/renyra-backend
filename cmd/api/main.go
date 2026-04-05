@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -32,6 +33,13 @@ import (
 )
 
 func main() {
+	// Force IPv4 for all outbound connections.
+	// The server has no working IPv6 route to Google (Firebase token verification
+	// hangs for 60s on IPv6 before timing out, causing intermittent 401s).
+	http.DefaultTransport.(*http.Transport).DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "tcp4", addr)
+	}
+
 	// 1. Load Config
 	cfg, err := config.LoadConfig()
 	if err != nil {

@@ -24,6 +24,7 @@ type Repository interface {
 	GetCommentByID(ctx context.Context, commentID bson.ObjectID) (*models.Comment, error)
 	GetCommentsByPoem(ctx context.Context, poemID bson.ObjectID, limit int, beforeID *bson.ObjectID) ([]models.Comment, error)
 	SoftDeleteComment(ctx context.Context, commentID, authorID bson.ObjectID) error
+	ForceDeleteComment(ctx context.Context, commentID bson.ObjectID) error
 	IncrementCommentLikes(ctx context.Context, commentID bson.ObjectID) error
 	DecrementCommentLikes(ctx context.Context, commentID bson.ObjectID) error
 
@@ -188,6 +189,16 @@ func (r *repository) GetCommentsByPoem(ctx context.Context, poemID bson.ObjectID
 func (r *repository) SoftDeleteComment(ctx context.Context, commentID, authorID bson.ObjectID) error {
 	_, err := r.comments.UpdateOne(ctx,
 		bson.M{"_id": commentID, "authorId": authorID},
+		bson.M{"$set": bson.M{"isDeleted": true, "content": "This comment was deleted", "updatedAt": time.Now()}},
+	)
+	return err
+}
+
+// ForceDeleteComment soft-deletes a comment without checking authorId.
+// Used when the poem author (not the comment author) removes a comment from their poem.
+func (r *repository) ForceDeleteComment(ctx context.Context, commentID bson.ObjectID) error {
+	_, err := r.comments.UpdateOne(ctx,
+		bson.M{"_id": commentID},
 		bson.M{"$set": bson.M{"isDeleted": true, "content": "This comment was deleted", "updatedAt": time.Now()}},
 	)
 	return err

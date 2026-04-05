@@ -123,6 +123,7 @@ func (r *repository) GetByAuthor(ctx context.Context, authorID bson.ObjectID, li
 	filter := bson.M{
 		"authorId":  authorID,
 		"isDeleted": false,
+		"isRepost":  bson.M{"$ne": true},
 	}
 
 	if !includePrivate {

@@ -38,7 +38,7 @@ func NewService(repo Repository, followRepo follows.Repository, userRepo users.R
 	}
 }
 
-func (s *service) buildPoemResponse(ctx context.Context, poem *models.Poem, author *models.User, isLiked, isReposted bool) models.PoemResponse {
+func (s *service) buildPoemResponse(ctx context.Context, poem *models.Poem, author *models.User, isLiked, isReposted bool, originalPoem *models.Poem, originalAuthor *models.User) models.PoemResponse {
 	resp := models.PoemResponse{
 		ID:             poem.ID.Hex(),
 		Title:          poem.Title,
@@ -58,8 +58,15 @@ func (s *service) buildPoemResponse(ctx context.Context, poem *models.Poem, auth
 		RepostsCount:   poem.RepostsCount,
 		IsLikedByMe:    isLiked,
 		IsRepostedByMe: isReposted,
+		IsRepost:       poem.IsRepost,
 		CreatedAt:      poem.CreatedAt,
 		UpdatedAt:      poem.UpdatedAt,
+	}
+
+	// Embed original poem if it's a repost and original exists
+	if poem.IsRepost && originalPoem != nil {
+		origResp := s.buildPoemResponse(ctx, originalPoem, originalAuthor, false, false, nil, nil)
+		resp.OriginalPoem = &origResp
 	}
 
 	// Populate author
@@ -139,6 +146,15 @@ func (s *service) GetHomeFeed(ctx context.Context, callerIDStr string, limit int
 		poemDocs = poemDocs[:limit]
 	}
 
+	// Fetch original poems for reposts
+	var originalIDs []bson.ObjectID
+	for _, p := range poemDocs {
+		if p.IsRepost && p.OriginalID != nil {
+			originalIDs = append(originalIDs, *p.OriginalID)
+		}
+	}
+	originalPoemsMap, _ := s.repo.GetPoemsByIDs(ctx, originalIDs)
+
 	// Batch check like/repost status
 	var likedMap map[string]bool
 	var repostedMap map[string]bool
@@ -151,9 +167,12 @@ func (s *service) GetHomeFeed(ctx context.Context, callerIDStr string, limit int
 		repostedMap, _ = s.socialRepo.IsPoemRepostedMany(ctx, callerID, ids)
 	}
 
-	// Batch fetch authors
+	// Batch fetch authors (including original authors)
 	authorIDSet := make(map[bson.ObjectID]bool)
 	for _, p := range poemDocs {
+		authorIDSet[p.AuthorID] = true
+	}
+	for _, p := range originalPoemsMap {
 		authorIDSet[p.AuthorID] = true
 	}
 	authorIDs := make([]bson.ObjectID, 0, len(authorIDSet))
@@ -169,7 +188,16 @@ func (s *service) GetHomeFeed(ctx context.Context, callerIDStr string, limit int
 	responses := make([]models.PoemResponse, 0, len(poemDocs))
 	for _, p := range poemDocs {
 		author := authorMap[p.AuthorID]
-		responses = append(responses, s.buildPoemResponse(ctx, &p, author, likedMap[p.ID.Hex()], repostedMap[p.ID.Hex()]))
+		var originalPoem *models.Poem
+		var originalAuthor *models.User
+		if p.IsRepost && p.OriginalID != nil {
+			op, exists := originalPoemsMap[*p.OriginalID]
+			if exists {
+				originalPoem = &op
+				originalAuthor = authorMap[op.AuthorID]
+			}
+		}
+		responses = append(responses, s.buildPoemResponse(ctx, &p, author, likedMap[p.ID.Hex()], repostedMap[p.ID.Hex()], originalPoem, originalAuthor))
 	}
 
 	return &models.FeedPage{Poems: responses, HasMore: hasMore}, nil
@@ -228,7 +256,7 @@ func (s *service) GetExploreFeed(ctx context.Context, userID string, hashtag str
 	responses := make([]models.PoemResponse, 0, len(poemDocs))
 	for _, p := range poemDocs {
 		author := authorMap[p.AuthorID]
-		responses = append(responses, s.buildPoemResponse(ctx, &p, author, likedMap[p.ID.Hex()], repostedMap[p.ID.Hex()]))
+		responses = append(responses, s.buildPoemResponse(ctx, &p, author, likedMap[p.ID.Hex()], repostedMap[p.ID.Hex()], nil, nil))
 	}
 
 	return &models.FeedPage{Poems: responses, HasMore: hasMore}, nil
@@ -272,7 +300,7 @@ func (s *service) GetAudioFeed(ctx context.Context, limit int, offset int) (*mod
 	responses := make([]models.PoemResponse, 0, len(poemDocs))
 	for _, p := range poemDocs {
 		author := authorMap[p.AuthorID]
-		responses = append(responses, s.buildPoemResponse(ctx, &p, author, false, false))
+		responses = append(responses, s.buildPoemResponse(ctx, &p, author, false, false, nil, nil))
 	}
 
 	return &models.FeedPage{Poems: responses, HasMore: hasMore}, nil
@@ -326,7 +354,7 @@ func (s *service) SearchPoems(ctx context.Context, query string, limit int, befo
 	responses := make([]models.PoemResponse, 0, len(poemDocs))
 	for _, p := range poemDocs {
 		author := authorMap[p.AuthorID]
-		responses = append(responses, s.buildPoemResponse(ctx, &p, author, false, false))
+		responses = append(responses, s.buildPoemResponse(ctx, &p, author, false, false, nil, nil))
 	}
 
 	return &models.PoemSearchPage{Poems: responses, HasMore: hasMore}, nil
