@@ -1,99 +1,98 @@
 package middleware
 
 import (
-	"context"
+	"errors"
 	"log"
 	"strings"
 
 	firebase "firebase.google.com/go/v4"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/gofiber/fiber/v2"
+	"github.com/xyz-asif/gotodo/internal/config"
+	"github.com/xyz-asif/gotodo/internal/features/auth"
 	"github.com/xyz-asif/gotodo/internal/features/users"
-	"github.com/xyz-asif/gotodo/internal/models"
 	"github.com/xyz-asif/gotodo/pkg/response"
 )
 
 type AuthMiddleware struct {
 	App         *firebase.App
 	userService users.Service
+	cfg         *config.Config
 }
 
-func NewAuthMiddleware(app *firebase.App, userService users.Service) (*AuthMiddleware, error) {
+func NewAuthMiddleware(app *firebase.App, userService users.Service, cfg *config.Config) (*AuthMiddleware, error) {
 	if app == nil {
 		return nil, fiber.NewError(500, "firebase app is required")
 	}
-
-	return &AuthMiddleware{
-		App:         app,
-		userService: userService,
-	}, nil
+	return &AuthMiddleware{App: app, userService: userService, cfg: cfg}, nil
 }
 
+// VerifyToken validates the JWT access token locally (no Firebase network call).
 func (am *AuthMiddleware) VerifyToken(c *fiber.Ctx) error {
-	authHeader := c.Get("Authorization")
-	token := ""
-
-	if authHeader != "" {
-		token = strings.TrimPrefix(authHeader, "Bearer ")
-		if token == authHeader {
-			return response.Unauthorized(c, "Invalid Authorization header format")
-		}
-	} else {
-		// Check for token in query parameter (for WebSocket connections)
-		token = c.Query("token")
-		if token == "" {
-			return response.Unauthorized(c, "Missing Authorization header")
-		}
+	tokenStr := extractToken(c)
+	if tokenStr == "" {
+		return response.Unauthorized(c, "Missing Authorization header")
 	}
 
-	client, err := am.App.Auth(c.Context())
+	claims, err := am.parseJWT(tokenStr)
 	if err != nil {
-		log.Printf("Error getting auth client: %v", err)
-		return response.InternalError(c, "Internal Server Error")
-	}
-
-	decodedToken, err := client.VerifyIDToken(c.Context(), token)
-	if err != nil {
-		log.Printf("Error verifying token: %v", err)
+		log.Printf("JWT verification failed: %v", err)
 		return response.Unauthorized(c, "Invalid token")
 	}
 
-	uid := decodedToken.UID
-	email, _ := decodedToken.Claims["email"].(string)
-	picture, _ := decodedToken.Claims["picture"].(string)
-	name, _ := decodedToken.Claims["name"].(string)
-
-	// critical: Get or Create User
-	user, err := am.userService.GetOrCreateUser(c.Context(), uid, email, name, picture)
-	if err != nil {
-		log.Printf("Error hydrating user: %v", err)
-		return response.InternalError(c, "Failed to load user profile")
+	user, err := am.userService.GetUserByID(c.Context(), claims.UserID)
+	if err != nil || user == nil || user.ID.IsZero() {
+		log.Printf("User not found for sub=%s: %v", claims.UserID, err)
+		return response.Unauthorized(c, "User not found")
 	}
 
-	// Defensive check: ensure user and user.ID are valid
-	if user == nil {
-		log.Printf("GetOrCreateUser returned nil user for uid: %s", uid)
-		return response.InternalError(c, "Failed to load user profile")
-	}
-
-	if user.ID.IsZero() {
-		log.Printf("User ID is zero for uid: %s, email: %s", uid, email)
-		return response.InternalError(c, "User profile is incomplete")
-	}
-
-	// Store user info in context
-	c.Locals("uid", uid)
-	c.Locals("email", email)
+	c.Locals("uid", user.FirebaseUID)
+	c.Locals("email", user.Email)
 	c.Locals("user", user)
-
 	return c.Next()
 }
 
-// Protect returns the VerifyToken middleware for routes that require authentication
+// Protect is an alias for VerifyToken used by route setup.
 func (am *AuthMiddleware) Protect() fiber.Handler {
 	return am.VerifyToken
 }
 
-// extractToken extracts the Bearer token from Authorization header or query param
+// OptionalAuth sets user in locals if a valid token is present; continues regardless.
+func (am *AuthMiddleware) OptionalAuth() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		tokenStr := extractToken(c)
+		if tokenStr != "" {
+			if claims, err := am.parseJWT(tokenStr); err == nil {
+				if user, err := am.userService.GetUserByID(c.Context(), claims.UserID); err == nil && user != nil && !user.ID.IsZero() {
+					c.Locals("uid", user.FirebaseUID)
+					c.Locals("email", user.Email)
+					c.Locals("user", user)
+				}
+			}
+		}
+		return c.Next()
+	}
+}
+
+// parseJWT validates the token signature and expiry, returning the claims.
+func (am *AuthMiddleware) parseJWT(tokenStr string) (*auth.Claims, error) {
+	token, err := jwt.ParseWithClaims(tokenStr, &auth.Claims{}, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.New("unexpected signing method")
+		}
+		return []byte(am.cfg.JWTSecret), nil
+	})
+	if err != nil || !token.Valid {
+		return nil, errors.New("invalid token")
+	}
+	claims, ok := token.Claims.(*auth.Claims)
+	if !ok {
+		return nil, errors.New("invalid token claims")
+	}
+	return claims, nil
+}
+
+// extractToken extracts the Bearer token from Authorization header or ?token= query param.
 func extractToken(c *fiber.Ctx) string {
 	authHeader := c.Get("Authorization")
 	if authHeader != "" {
@@ -102,41 +101,5 @@ func extractToken(c *fiber.Ctx) string {
 			return token
 		}
 	}
-	// Check for token in query parameter (for WebSocket connections)
 	return c.Query("token")
-}
-
-// verifyAndGetUser verifies the token and returns the user
-func (am *AuthMiddleware) verifyAndGetUser(ctx context.Context, token string) (*models.User, error) {
-	client, err := am.App.Auth(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	decodedToken, err := client.VerifyIDToken(ctx, token)
-	if err != nil {
-		return nil, err
-	}
-
-	uid := decodedToken.UID
-	email, _ := decodedToken.Claims["email"].(string)
-	picture, _ := decodedToken.Claims["picture"].(string)
-	name, _ := decodedToken.Claims["name"].(string)
-
-	return am.userService.GetOrCreateUser(ctx, uid, email, name, picture)
-}
-
-// OptionalAuth — sets user in locals if token present, continues regardless
-func (am *AuthMiddleware) OptionalAuth() fiber.Handler {
-	return func(c *fiber.Ctx) error {
-		token := extractToken(c)
-		if token != "" {
-			if user, err := am.verifyAndGetUser(c.Context(), token); err == nil && user != nil && !user.ID.IsZero() {
-				c.Locals("uid", user.FirebaseUID)
-				c.Locals("email", user.Email)
-				c.Locals("user", user)
-			}
-		}
-		return c.Next()
-	}
 }

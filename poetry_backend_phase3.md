@@ -652,7 +652,7 @@ func (s *service) AddComment(ctx context.Context, authorIDStr, poemIDStr, conten
                 ResourceType: "poem",
                 ResourceID:   poemIDStr,
                 Title:        name,
-                Body:         "commented on your poem",
+                Body:         "commented on your post",
                 GroupKey:     "comment:" + poemIDStr,
             })
         }

@@ -79,10 +79,10 @@ func (s *service) TogglePoemLike(ctx context.Context, userIDStr, poemIDStr strin
 		}
 		// Wait for decrement to finish to return accurate count
 		_ = s.repo.DecrementPoemLikes(ctx, poemID)
-		
+
 		var updated models.Poem
 		_ = s.poemsCol.FindOne(ctx, bson.M{"_id": poemID, "isDeleted": false}).Decode(&updated)
-		
+
 		newCount := updated.LikesCount
 		if newCount < 0 {
 			newCount = 0
@@ -117,7 +117,7 @@ func (s *service) TogglePoemLike(ctx context.Context, userIDStr, poemIDStr strin
 				ResourceType: "poem",
 				ResourceID:   poemIDStr,
 				Title:        name,
-				Body:         "liked your poem \"" + poem.Title + "\"",
+				Body:         "liked your post \"" + poem.Title + "\"",
 				GroupKey:     "like:" + poemIDStr,
 			})
 		}
@@ -243,7 +243,7 @@ func (s *service) AddComment(ctx context.Context, authorIDStr, poemIDStr, conten
 				ResourceType: "poem",
 				ResourceID:   poemIDStr,
 				Title:        name,
-				Body:         "commented on your poem",
+				Body:         "commented on your post",
 				GroupKey:     "comment:" + poemIDStr,
 			})
 		}
@@ -458,7 +458,7 @@ func (s *service) ToggleCommentLike(ctx context.Context, userIDStr, commentIDStr
 			return false, 0, err
 		}
 		_ = s.repo.DecrementCommentLikes(ctx, commentID)
-		
+
 		updated, _ := s.repo.GetCommentByID(ctx, commentID)
 		newCount := 0
 		if updated != nil {
@@ -490,11 +490,13 @@ func (s *service) ToggleCommentLike(ctx context.Context, userIDStr, commentIDStr
 				RecipientID:  comment.AuthorID,
 				ActorID:      userID,
 				Type:         models.NotifTypeCommentLiked,
-				ResourceType: "comment",
-				ResourceID:   commentIDStr,
-				Title:        name,
-				Body:         "liked your comment",
-				GroupKey:     "clike:" + commentIDStr,
+				ResourceType: "poem",
+				ResourceID:   comment.PoemID.Hex(),
+				// ResourceType: "comment",
+				// ResourceID:   commentIDStr,
+				Title:    name,
+				Body:     "liked your comment",
+				GroupKey: "clike:" + commentIDStr,
 			})
 		}
 	}()
@@ -550,10 +552,10 @@ func (s *service) ToggleRepost(ctx context.Context, userIDStr, poemIDStr string)
 			return false, 0, err
 		}
 		_ = s.repo.DecrementPoemReposts(ctx, poemID)
-		
+
 		var updated models.Poem
 		_ = s.poemsCol.FindOne(ctx, bson.M{"_id": poemID, "isDeleted": false}).Decode(&updated)
-		
+
 		newCount := updated.RepostsCount
 		if newCount < 0 {
 			newCount = 0
@@ -602,7 +604,7 @@ func (s *service) ToggleRepost(ctx context.Context, userIDStr, poemIDStr string)
 				ResourceType: "poem",
 				ResourceID:   poemIDStr,
 				Title:        name,
-				Body:         "reposted your poem \"" + original.Title + "\"",
+				Body:         "reposted your post \"" + original.Title + "\"",
 				GroupKey:     "repost:" + poemIDStr,
 			})
 		}
@@ -722,22 +724,22 @@ func (s *service) buildRepostResponse(ctx context.Context, rp *models.Poem, like
 		if err := s.poemsCol.FindOne(ctx, bson.M{"_id": *rp.OriginalID}).Decode(&original); err == nil {
 			origIDHex := original.ID.Hex()
 			originalResp := models.PoemResponse{
-				ID:            origIDHex,
-				Title:         original.Title,
-				ContentJSON:   original.ContentJSON,
-				PlainText:     original.PlainText,
-				Hashtags:      original.Hashtags,
-				Mood:          original.Mood,
-				IsOriginal:    original.IsOriginal,
-				Visibility:    original.Visibility,
-				AudioURL:      original.AudioURL,
-				AudioDuration: original.AudioDuration,
-				LikesCount:    original.LikesCount,
-				CommentsCount: original.CommentsCount,
-				RepostsCount:  original.RepostsCount,
+				ID:             origIDHex,
+				Title:          original.Title,
+				ContentJSON:    original.ContentJSON,
+				PlainText:      original.PlainText,
+				Hashtags:       original.Hashtags,
+				Mood:           original.Mood,
+				IsOriginal:     original.IsOriginal,
+				Visibility:     original.Visibility,
+				AudioURL:       original.AudioURL,
+				AudioDuration:  original.AudioDuration,
+				LikesCount:     original.LikesCount,
+				CommentsCount:  original.CommentsCount,
+				RepostsCount:   original.RepostsCount,
 				IsLikedByMe:    likedMap[origIDHex],
 				IsRepostedByMe: repostedMap[origIDHex],
-				CreatedAt:     original.CreatedAt,
+				CreatedAt:      original.CreatedAt,
 			}
 			originalAuthor, _ := s.userRepo.GetUserByID(ctx, original.AuthorID)
 			if originalAuthor != nil {

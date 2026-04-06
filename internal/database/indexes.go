@@ -183,6 +183,19 @@ func CreateIndexes(ctx context.Context, db *mongo.Database) error {
 		log.Printf("Warning: Comment likes index issue: %v", err)
 	}
 
+	// ── Refresh Tokens ──
+	refreshTokenIndexes := []mongo.IndexModel{
+		// Primary lookup by hashed token — must be unique and fast
+		{Keys: bson.D{{Key: "tokenHash", Value: 1}}, Options: options.Index().SetUnique(true)},
+		// TTL index: MongoDB auto-deletes expired tokens
+		{Keys: bson.D{{Key: "expiresAt", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(0)},
+		// Lookup all tokens for a user (for bulk revoke on account delete/password change)
+		{Keys: bson.D{{Key: "userId", Value: 1}}},
+	}
+	if _, err := db.Collection("refresh_tokens").Indexes().CreateMany(ctx, refreshTokenIndexes); err != nil {
+		log.Printf("Warning: Refresh tokens index issue: %v", err)
+	}
+
 	log.Println("✅ All MongoDB indexes created successfully")
 	return nil
 }

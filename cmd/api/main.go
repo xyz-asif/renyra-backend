@@ -18,6 +18,7 @@ import (
 	"google.golang.org/api/option"
 	"github.com/xyz-asif/gotodo/internal/config"
 	"github.com/xyz-asif/gotodo/internal/database"
+	"github.com/xyz-asif/gotodo/internal/features/auth"
 	"github.com/xyz-asif/gotodo/internal/features/chat"
 	"github.com/xyz-asif/gotodo/internal/features/connections"
 	"github.com/xyz-asif/gotodo/internal/features/feed"
@@ -119,13 +120,18 @@ func main() {
 	feedService := feed.NewService(feedRepo, followRepo, userRepo, socialRepo)
 	feedHandler := feed.NewHandler(feedService)
 
-	// 5. Setup Middleware
-	authMiddleware, err := middleware.NewAuthMiddleware(firebaseApp, userService)
+	// 5. Setup Auth feature (JWT exchange / refresh / logout)
+	authRepo := auth.NewRepository(db.Database)
+	authService := auth.NewService(authRepo, userService, firebaseApp, cfg)
+	authHandler := auth.NewHandler(authService)
+
+	// 6. Setup Middleware (JWT local validation — no Firebase network call per request)
+	authMiddleware, err := middleware.NewAuthMiddleware(firebaseApp, userService, cfg)
 	if err != nil {
-		log.Printf("Warning: Firebase Auth not setup: %v", err)
+		log.Printf("Warning: Auth middleware not setup: %v", err)
 	}
 
-	// 6. Setup Fiber
+	// 7. Setup Fiber
 	app := fiber.New(fiber.Config{
 		AppName:      "Chat API v1.0",
 		ReadTimeout:  30 * time.Second,
@@ -143,10 +149,11 @@ func main() {
 		})
 	})
 
-	// 7. Setup Routes
+	// 8. Setup Routes
 	routes.SetupRoutes(
 		app,
 		authMiddleware,
+		authHandler,
 		userHandler,
 		connectionHandler,
 		chatHandler,

@@ -8,6 +8,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/gofiber/fiber/v2/middleware/timeout"
+	"github.com/xyz-asif/gotodo/internal/features/auth"
 	"github.com/xyz-asif/gotodo/internal/features/chat"
 	"github.com/xyz-asif/gotodo/internal/features/connections"
 	"github.com/xyz-asif/gotodo/internal/features/feed"
@@ -25,6 +26,7 @@ import (
 func SetupRoutes(
 	app *fiber.App,
 	authMiddleware *middleware.AuthMiddleware,
+	authHandler *auth.Handler,
 	userHandler *users.Handler,
 	connectionHandler *connections.Handler,
 	chatHandler *chat.Handler,
@@ -41,6 +43,12 @@ func SetupRoutes(
 	api.Use(timeout.NewWithContext(func(c *fiber.Ctx) error {
 		return c.Next()
 	}, 10*time.Second))
+
+	// ── Auth Routes (public — must be before rate limiter) ──
+	authGroup := api.Group("/auth")
+	authGroup.Post("/exchange", authHandler.Exchange)
+	authGroup.Post("/refresh", authHandler.Refresh)
+	authGroup.Post("/logout", authHandler.Logout)
 
 	// Rate limiter: 100 requests per minute per IP
 	api.Use(limiter.New(limiter.Config{
