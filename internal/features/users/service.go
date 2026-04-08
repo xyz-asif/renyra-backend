@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/xyz-asif/gotodo/internal/models"
+	"github.com/xyz-asif/renyra-backend/internal/models"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 

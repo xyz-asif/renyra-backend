@@ -43,3 +43,4 @@ The Go backend service for the Anchor content curation platform.
 | `make test` | Run tests |
 | `make lint` | Run static analysis |
 
+# renyra-backend

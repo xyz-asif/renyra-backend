@@ -2,8 +2,8 @@ package feed
 
 import (
 	"github.com/gofiber/fiber/v2"
-	"github.com/xyz-asif/gotodo/internal/models"
-	"github.com/xyz-asif/gotodo/pkg/response"
+	"github.com/xyz-asif/renyra-backend/internal/models"
+	"github.com/xyz-asif/renyra-backend/pkg/response"
 )
 
 type Handler struct {

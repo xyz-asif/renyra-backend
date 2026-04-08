@@ -5,7 +5,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/limiter"
-	"github.com/xyz-asif/gotodo/internal/models"
+	"github.com/xyz-asif/renyra-backend/internal/models"
 )
 
 // MVP Launch: Rate Limiting Configuration - Completed

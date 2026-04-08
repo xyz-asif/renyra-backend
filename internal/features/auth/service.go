@@ -10,8 +10,8 @@ import (
 
 	firebase "firebase.google.com/go/v4"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/xyz-asif/gotodo/internal/config"
-	"github.com/xyz-asif/gotodo/internal/features/users"
+	"github.com/xyz-asif/renyra-backend/internal/config"
+	"github.com/xyz-asif/renyra-backend/internal/features/users"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 

@@ -5,11 +5,11 @@ import (
 	"errors"
 	"log"
 
-	"github.com/xyz-asif/gotodo/internal/features/follows"
-	"github.com/xyz-asif/gotodo/internal/features/poems"
-	"github.com/xyz-asif/gotodo/internal/features/social"
-	"github.com/xyz-asif/gotodo/internal/features/users"
-	"github.com/xyz-asif/gotodo/internal/models"
+	"github.com/xyz-asif/renyra-backend/internal/features/follows"
+	"github.com/xyz-asif/renyra-backend/internal/features/poems"
+	"github.com/xyz-asif/renyra-backend/internal/features/social"
+	"github.com/xyz-asif/renyra-backend/internal/features/users"
+	"github.com/xyz-asif/renyra-backend/internal/models"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 

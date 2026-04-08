@@ -7,10 +7,10 @@
 // 	"strings"
 // 	"time"
 
-// 	"github.com/xyz-asif/gotodo/internal/features/notifications"
-// 	"github.com/xyz-asif/gotodo/internal/features/social"
-// 	"github.com/xyz-asif/gotodo/internal/features/users"
-// 	"github.com/xyz-asif/gotodo/internal/models"
+// 	"github.com/xyz-asif/renyra-backend/internal/features/notifications"
+// 	"github.com/xyz-asif/renyra-backend/internal/features/social"
+// 	"github.com/xyz-asif/renyra-backend/internal/features/users"
+// 	"github.com/xyz-asif/renyra-backend/internal/models"
 // 	"go.mongodb.org/mongo-driver/v2/bson"
 // 	"go.mongodb.org/mongo-driver/v2/mongo"
 // )
@@ -603,10 +603,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xyz-asif/gotodo/internal/features/notifications"
-	"github.com/xyz-asif/gotodo/internal/features/social"
-	"github.com/xyz-asif/gotodo/internal/features/users"
-	"github.com/xyz-asif/gotodo/internal/models"
+	"github.com/xyz-asif/renyra-backend/internal/features/notifications"
+	"github.com/xyz-asif/renyra-backend/internal/features/social"
+	"github.com/xyz-asif/renyra-backend/internal/features/users"
+	"github.com/xyz-asif/renyra-backend/internal/models"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 )

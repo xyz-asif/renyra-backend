@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/gofiber/contrib/websocket"
-	"github.com/xyz-asif/gotodo/internal/models"
+	"github.com/xyz-asif/renyra-backend/internal/models"
 )
 
 const sendBufSize = 256

@@ -8,10 +8,10 @@ import (
 	firebase "firebase.google.com/go/v4"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gofiber/fiber/v2"
-	"github.com/xyz-asif/gotodo/internal/config"
-	"github.com/xyz-asif/gotodo/internal/features/auth"
-	"github.com/xyz-asif/gotodo/internal/features/users"
-	"github.com/xyz-asif/gotodo/pkg/response"
+	"github.com/xyz-asif/renyra-backend/internal/config"
+	"github.com/xyz-asif/renyra-backend/internal/features/auth"
+	"github.com/xyz-asif/renyra-backend/internal/features/users"
+	"github.com/xyz-asif/renyra-backend/pkg/response"
 )
 
 type AuthMiddleware struct {
