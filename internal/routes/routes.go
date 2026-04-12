@@ -16,6 +16,7 @@ import (
 	"github.com/xyz-asif/renyra-backend/internal/features/notifications"
 	"github.com/xyz-asif/renyra-backend/internal/features/poems"
 	"github.com/xyz-asif/renyra-backend/internal/features/profile"
+	"github.com/xyz-asif/renyra-backend/internal/features/reports"
 	"github.com/xyz-asif/renyra-backend/internal/features/social"
 	"github.com/xyz-asif/renyra-backend/internal/features/users"
 	"github.com/xyz-asif/renyra-backend/internal/middleware"
@@ -36,6 +37,7 @@ func SetupRoutes(
 	followHandler *follows.Handler,
 	feedHandler *feed.Handler,
 	socialHandler *social.Handler,
+	reportHandler *reports.Handler,
 	db *mongo.Database,
 ) {
 	// API v1 group with global 10-second timeout
@@ -93,6 +95,7 @@ func SetupRoutes(
 	usersGroup.Get("/search-with-status", authMiddleware.VerifyToken, userHandler.SearchWithConnectionStatus)
 	usersGroup.Get("/me", authMiddleware.VerifyToken, userHandler.GetMe)
 	usersGroup.Patch("/me", authMiddleware.VerifyToken, userHandler.UpdateProfile)
+	usersGroup.Delete("/me", authMiddleware.VerifyToken, userHandler.DeleteAccount)
 	usersGroup.Post("/me/fcm-token", authMiddleware.VerifyToken, userHandler.RegisterFCMToken)
 
 	// ── Connection / Friend Request Routes ──
@@ -135,6 +138,13 @@ func SetupRoutes(
 	notifGroup.Get("/unread-count", authMiddleware.VerifyToken, notifHandler.GetUnreadCount)
 	notifGroup.Post("/:id/read", authMiddleware.VerifyToken, notifHandler.MarkAsRead)
 	notifGroup.Post("/read-all", authMiddleware.VerifyToken, notifHandler.MarkAllAsRead)
+
+	// ── Reports (Bugs / Features) ──
+	reportsGroup := api.Group("/reports")
+	reportsGroup.Post("/", authMiddleware.Protect(), strictRateLimit, reportHandler.CreateReport)
+	reportsGroup.Get("/me", authMiddleware.Protect(), reportHandler.GetMyReports)
+	reportsGroup.Patch("/:id", reportHandler.UpdateReport) // public for developer/admin
+	reportsGroup.Get("/", reportHandler.GetReports)        // public list
 
 	// ── Profile Setup ──
 	api.Post("/users/setup", authMiddleware.Protect(), profileHandler.SetupProfile)

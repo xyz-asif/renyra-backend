@@ -1,6 +1,8 @@
 package users
 
 import (
+	"strings"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/xyz-asif/renyra-backend/internal/models"
 	pkgErrors "github.com/xyz-asif/renyra-backend/pkg/errors"
@@ -113,3 +115,35 @@ func (h *Handler) RegisterFCMToken(c *fiber.Ctx) error {
 
 	return response.OK(c, "Token registered", nil)
 }
+
+// DeleteAccount handles the /api/v1/users/me deletion request
+func (h *Handler) DeleteAccount(c *fiber.Ctx) error {
+	user, ok := c.Locals("user").(*models.User)
+	if !ok {
+		return response.Unauthorized(c, "Unauthorized")
+	}
+
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return response.BadRequest(c, "invalid request body")
+	}
+
+	// Optional: You could read the 'reason' from query params if you prefer
+	// reason := c.Query("reason", req.Reason)
+	
+	if err := h.service.DeleteAccount(c.Context(), user.ID.Hex(), req.Reason); err != nil {
+		if strings.Contains(err.Error(), "required") || strings.Contains(err.Error(), "too long") {
+			return response.ValidationFailed(c, err.Error())
+		}
+		if err.Error() == "user not found" {
+			return response.NotFound(c, err.Error())
+		}
+		return response.InternalError(c, err.Error())
+	}
+
+	// Since they deleted the account, we return a success response
+	return response.OK(c, "Account deleted successfully", nil)
+}
+

@@ -12,15 +12,18 @@ const (
 	NotifTypeConnectionRequest  = "connection_request"
 	NotifTypeConnectionAccepted = "connection_accepted"
 	NotifTypeNewMessage         = "new_message"
-	// Future: "post_like", "post_comment", "mention", "follow", etc.
+	NotifTypeReportStatusUpdated = "report_status_updated"
+	NotifTypeReportAdminReply    = "report_admin_reply"
 )
 
 // Resource types — what entity the notification points to.
 // The frontend switches on these to decide WHERE to navigate.
 const (
-	ResourceTypeConnection = "connection"
-	ResourceTypeChatRoom   = "chat_room"
-	ResourceTypePoem       = "poem"        // ← ADD THIS
+	ResourceTypeConnection     = "connection"
+	ResourceTypeChatRoom       = "chat_room"
+	ResourceTypePoem           = "poem"
+	ResourceTypeBugReport      = "bug_report"
+	ResourceTypeFeatureRequest = "feature_request"
 )
 
 // Notification is the DB document stored in the "notifications" collection.

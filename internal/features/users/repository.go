@@ -30,6 +30,8 @@ type Repository interface {
 	RemoveFCMTokens(ctx context.Context, userID bson.ObjectID, tokens []string) error
 	IncrementPostsCount(ctx context.Context, userID bson.ObjectID) error
 	DecrementPostsCount(ctx context.Context, userID bson.ObjectID) error
+	DeleteUser(ctx context.Context, userID bson.ObjectID) error
+	LogAccountDeletion(ctx context.Context, log *models.AccountDeletion) error
 }
 
 type repository struct {
@@ -237,5 +239,18 @@ func (r *repository) DecrementFollowingCount(ctx context.Context, userID bson.Ob
 		bson.M{"_id": userID, "followingCount": bson.M{"$gt": 0}},
 		bson.M{"$inc": bson.M{"followingCount": -1}},
 	)
+	return err
+}
+
+// DeleteUser performs a hard delete of the user document
+func (r *repository) DeleteUser(ctx context.Context, userID bson.ObjectID) error {
+	_, err := r.collection.DeleteOne(ctx, bson.M{"_id": userID})
+	return err
+}
+
+// LogAccountDeletion saves an audit log of the user's account deletion
+func (r *repository) LogAccountDeletion(ctx context.Context, log *models.AccountDeletion) error {
+	log.DeletedAt = time.Now()
+	_, err := r.db.Collection("account_deletions").InsertOne(ctx, log)
 	return err
 }

@@ -61,10 +61,14 @@ func (s *service) Send(ctx context.Context, req models.SendNotificationRequest) 
 		return nil
 	}
 
-	// Look up actor info for display
+	// Look up actor info for display.
+	// System/admin notifications use bson.NilObjectID as ActorID — degrade gracefully.
 	actor, err := s.userLookup.GetUserByID(ctx, req.ActorID)
 	if err != nil {
-		return fmt.Errorf("failed to look up actor: %w", err)
+		if req.ActorID != bson.NilObjectID {
+			log.Printf("notification: actor lookup failed for %s: %v", req.ActorID.Hex(), err)
+		}
+		actor = &models.User{}
 	}
 
 	// Handle grouping: if a GroupKey is set and an unread notification with the
