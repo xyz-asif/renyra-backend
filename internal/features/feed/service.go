@@ -53,6 +53,14 @@ func (s *service) buildPoemResponse(
 ) models.PoemResponse {
 	poemIDHex := poem.ID.Hex()
 
+	// Use publishedAt as the display timestamp so a draft published today shows
+	// "just now", not "4 days ago" (its draft createdAt). Falls back to createdAt
+	// for legacy poems that pre-date the publishedAt field.
+	displayTime := poem.CreatedAt
+	if poem.PublishedAt != nil {
+		displayTime = *poem.PublishedAt
+	}
+
 	resp := models.PoemResponse{
 		ID:             poemIDHex,
 		Title:          poem.Title,
@@ -73,7 +81,7 @@ func (s *service) buildPoemResponse(
 		IsLikedByMe:    likedMap[poemIDHex],
 		IsRepostedByMe: repostedMap[poemIDHex],
 		IsRepost:       poem.IsRepost,
-		CreatedAt:      poem.CreatedAt,
+		CreatedAt:      displayTime,
 		UpdatedAt:      poem.UpdatedAt,
 	}
 

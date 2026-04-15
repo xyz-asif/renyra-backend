@@ -772,6 +772,14 @@ func buildAuthor(user *models.User) models.PoemAuthor {
 }
 
 func (s *service) toResponse(poem *models.Poem, author *models.User) *models.PoemResponse {
+	// Use publishedAt as the display timestamp so a draft published today shows
+	// "just now", not "4 days ago" (its draft createdAt). Falls back to createdAt
+	// for legacy poems that pre-date the publishedAt field.
+	displayTime := poem.CreatedAt
+	if poem.PublishedAt != nil {
+		displayTime = *poem.PublishedAt
+	}
+
 	resp := &models.PoemResponse{
 		ID:            poem.ID.Hex(),
 		Author:        buildAuthor(author),
@@ -790,7 +798,7 @@ func (s *service) toResponse(poem *models.Poem, author *models.User) *models.Poe
 		LikesCount:    poem.LikesCount,
 		CommentsCount: poem.CommentsCount,
 		RepostsCount:  poem.RepostsCount,
-		CreatedAt:     poem.CreatedAt,
+		CreatedAt:     displayTime,
 		UpdatedAt:     poem.UpdatedAt,
 	}
 
@@ -1009,6 +1017,17 @@ func (s *service) Update(ctx context.Context, poemIDStr string, authorIDStr stri
 	// Resolve new mentions
 	newMentionIDs := s.resolveMentions(ctx, req.Description)
 
+	// Detect the private→public transition so the repository can stamp publishedAt.
+	// We only set it once — if publishedAt is already present the repository ignores
+	// this field, but to be safe we also guard here with existing.PublishedAt == nil.
+	var publishedAt *time.Time
+	if existing.Visibility == models.PoemVisibilityPrivate &&
+		req.Visibility == models.PoemVisibilityPublic &&
+		existing.PublishedAt == nil {
+		now := time.Now()
+		publishedAt = &now
+	}
+
 	updated, err := s.repo.Update(ctx, poemID, PoemUpdateFields{
 		Title:         req.Title,
 		ContentJSON:   req.ContentJSON,
@@ -1023,6 +1042,7 @@ func (s *service) Update(ctx context.Context, poemIDStr string, authorIDStr stri
 		Description:   req.Description,
 		TextAlign:     req.TextAlign,
 		Mentions:      newMentionIDs,
+		PublishedAt:   publishedAt,
 	})
 	if err != nil {
 		return nil, err

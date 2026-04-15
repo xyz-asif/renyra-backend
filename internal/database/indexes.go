@@ -106,7 +106,11 @@ func CreateIndexes(ctx context.Context, db *mongo.Database) error {
 
 	// ── Poems ──
 	poemsIndexes := []mongo.IndexModel{
-		// Primary: fetch all poems by author, newest first
+		// GetByAuthor + GetHomeFeed: sorted by publishedAt DESC, _id DESC
+		// Covers: filter on authorId + isDeleted, sort on publishedAt + _id
+		// Used for: my poems, user profile poems, and home feed pagination
+		{Keys: bson.D{{Key: "authorId", Value: 1}, {Key: "isDeleted", Value: 1}, {Key: "publishedAt", Value: -1}, {Key: "_id", Value: -1}}},
+		// Legacy authorId + _id index — kept for any $in queries that sort by _id only
 		{Keys: bson.D{{Key: "authorId", Value: 1}, {Key: "_id", Value: -1}}},
 		// Filter by visibility (for explore feed later)
 		{Keys: bson.D{{Key: "visibility", Value: 1}, {Key: "_id", Value: -1}}},
@@ -125,11 +129,11 @@ func CreateIndexes(ctx context.Context, db *mongo.Database) error {
 
 	// ── Poems — additional indexes for feed and scoring ──
 	poemsFeedIndexes := []mongo.IndexModel{
-		// Explore feed: public poems with engagement score sort
-		// score is computed at query time via $addFields — this index covers the base filter
-		{Keys: bson.D{{Key: "visibility", Value: 1}, {Key: "isDeleted", Value: 1}, {Key: "createdAt", Value: -1}}},
-		// Home feed: poems by multiple authors, cursor pagination
-		// MongoDB will use the existing authorId index for $in queries
+		// Explore feed: covers the $match filter (visibility + isDeleted + isRepost).
+		// Aggregation score is computed at query time — this index keeps the match stage fast.
+		{Keys: bson.D{{Key: "visibility", Value: 1}, {Key: "isDeleted", Value: 1}, {Key: "isRepost", Value: 1}}},
+		// Public poems sorted by _id — covers GetHomeFeed's visibility+isDeleted filter
+		{Keys: bson.D{{Key: "visibility", Value: 1}, {Key: "isDeleted", Value: 1}, {Key: "_id", Value: -1}}},
 	}
 	if _, err := db.Collection("poems").Indexes().CreateMany(ctx, poemsFeedIndexes); err != nil {
 		log.Printf("Warning: Poems feed index issue: %v", err)
