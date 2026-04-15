@@ -196,6 +196,27 @@ func CreateIndexes(ctx context.Context, db *mongo.Database) error {
 		log.Printf("Warning: Refresh tokens index issue: %v", err)
 	}
 
+	// ── Reports ──
+	reportsIndexes := []mongo.IndexModel{
+		{Keys: bson.D{{Key: "userId", Value: 1}, {Key: "_id", Value: -1}}},
+		{Keys: bson.D{{Key: "isBug", Value: 1}, {Key: "_id", Value: -1}}},
+		{Keys: bson.D{{Key: "status", Value: 1}}},
+		{Keys: bson.D{{Key: "createdAt", Value: -1}}},
+	}
+	if _, err := db.Collection("reports").Indexes().CreateMany(ctx, reportsIndexes); err != nil {
+		log.Printf("Warning: Reports index issue: %v", err)
+	}
+
+	// ── Account Deletions ──
+	deletionsIndexes := []mongo.IndexModel{
+		{Keys: bson.D{{Key: "userId", Value: 1}}},
+		{Keys: bson.D{{Key: "deletedAt", Value: -1}}},
+	}
+	if _, err := db.Collection("account_deletions").Indexes().CreateMany(ctx, deletionsIndexes); err != nil {
+		log.Printf("Warning: Account deletions index issue: %v", err)
+	}
+
 	log.Println("✅ All MongoDB indexes created successfully")
 	return nil
 }
+

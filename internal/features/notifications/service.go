@@ -61,10 +61,14 @@ func (s *service) Send(ctx context.Context, req models.SendNotificationRequest) 
 		return nil
 	}
 
-	// Look up actor info for display
+	// Look up actor info for display.
+	// System/admin notifications use bson.NilObjectID as ActorID — degrade gracefully.
 	actor, err := s.userLookup.GetUserByID(ctx, req.ActorID)
 	if err != nil {
-		return fmt.Errorf("failed to look up actor: %w", err)
+		if req.ActorID != bson.NilObjectID {
+			log.Printf("notification: actor lookup failed for %s: %v", req.ActorID.Hex(), err)
+		}
+		actor = &models.User{}
 	}
 
 	// Handle grouping: if a GroupKey is set and an unread notification with the
@@ -82,6 +86,12 @@ func (s *service) Send(ctx context.Context, req models.SendNotificationRequest) 
 			} else {
 				// Deliver the updated notification via WebSocket
 				s.deliverRealtime(existing.ID.Hex(), req, actor)
+				// FCM push — always for system/admin notifs, otherwise only if offline
+				recipientHex := req.RecipientID.Hex()
+				isSystemNotif := req.ActorID == bson.NilObjectID
+				if s.fcm != nil && (isSystemNotif || !s.hub.IsUserOnline(recipientHex)) {
+					go s.sendPush(req.RecipientID, req, actor)
+				}
 				return nil
 			}
 		}
@@ -107,9 +117,12 @@ func (s *service) Send(ctx context.Context, req models.SendNotificationRequest) 
 	// Real-time delivery via WebSocket
 	s.deliverRealtime(notif.ID.Hex(), req, actor)
 
-	// FCM push if recipient is offline
+	// FCM push — always for system/admin notifications (they're rare and important;
+	// the WS may still be alive briefly after the user backgrounds the app),
+	// otherwise only when the recipient is offline.
 	recipientHex := req.RecipientID.Hex()
-	if s.fcm != nil && !s.hub.IsUserOnline(recipientHex) {
+	isSystemNotif := req.ActorID == bson.NilObjectID
+	if s.fcm != nil && (isSystemNotif || !s.hub.IsUserOnline(recipientHex)) {
 		go s.sendPush(req.RecipientID, req, actor)
 	}
 

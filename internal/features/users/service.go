@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/xyz-asif/renyra-backend/internal/models"
@@ -24,6 +25,7 @@ type Service interface {
 	SearchUsersWithConnectionStatus(ctx context.Context, currentUserID, query string, limit, offset int) (*UserSearchResult, error)
 	GetFeed(ctx context.Context, userID string) ([]interface{}, error)
 	RegisterFCMToken(ctx context.Context, userID, token string) error
+	DeleteAccount(ctx context.Context, userID string, reason string) error
 }
 
 type service struct {
@@ -372,3 +374,47 @@ func (s *service) SearchUsersWithConnectionStatus(ctx context.Context, currentUs
 
 	return result, nil
 }
+
+func (s *service) DeleteAccount(ctx context.Context, userID string, reason string) error {
+	uid, err := bson.ObjectIDFromHex(userID)
+	if err != nil {
+		return errors.New("invalid user ID")
+	}
+
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return errors.New("deletion reason is required")
+	}
+	if len(reason) > 1000 {
+		return errors.New("deletion reason is too long (max 1000 characters)")
+	}
+
+	// Fetch user details for the audit log
+	user, err := s.repo.GetUserByID(ctx, uid)
+	if err != nil {
+		return err
+	}
+	if user == nil {
+		return errors.New("user not found")
+	}
+
+	// 1. Create audit log
+	deletionLog := &models.AccountDeletion{
+		UserID:   uid,
+		Email:    user.Email,
+		UserName: user.DisplayName, // recording their display name for the audit
+		Reason:   reason,
+	}
+	if err := s.repo.LogAccountDeletion(ctx, deletionLog); err != nil {
+		log.Printf("Failed to log account deletion for %s: %v", userID, err)
+		// Proceed anyway
+	}
+
+	// 2. Perform the hard delete
+	if err := s.repo.DeleteUser(ctx, uid); err != nil {
+		return err
+	}
+
+	return nil
+}
+
