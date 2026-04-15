@@ -86,6 +86,12 @@ func (s *service) Send(ctx context.Context, req models.SendNotificationRequest) 
 			} else {
 				// Deliver the updated notification via WebSocket
 				s.deliverRealtime(existing.ID.Hex(), req, actor)
+				// FCM push — always for system/admin notifs, otherwise only if offline
+				recipientHex := req.RecipientID.Hex()
+				isSystemNotif := req.ActorID == bson.NilObjectID
+				if s.fcm != nil && (isSystemNotif || !s.hub.IsUserOnline(recipientHex)) {
+					go s.sendPush(req.RecipientID, req, actor)
+				}
 				return nil
 			}
 		}
@@ -111,9 +117,12 @@ func (s *service) Send(ctx context.Context, req models.SendNotificationRequest) 
 	// Real-time delivery via WebSocket
 	s.deliverRealtime(notif.ID.Hex(), req, actor)
 
-	// FCM push if recipient is offline
+	// FCM push — always for system/admin notifications (they're rare and important;
+	// the WS may still be alive briefly after the user backgrounds the app),
+	// otherwise only when the recipient is offline.
 	recipientHex := req.RecipientID.Hex()
-	if s.fcm != nil && !s.hub.IsUserOnline(recipientHex) {
+	isSystemNotif := req.ActorID == bson.NilObjectID
+	if s.fcm != nil && (isSystemNotif || !s.hub.IsUserOnline(recipientHex)) {
 		go s.sendPush(req.RecipientID, req, actor)
 	}
 
