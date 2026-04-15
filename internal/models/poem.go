@@ -44,6 +44,10 @@ type Poem struct {
 	IsDeleted     bool           `bson:"isDeleted"            json:"isDeleted"`
 	CreatedAt     time.Time      `bson:"createdAt"            json:"createdAt"`
 	UpdatedAt     time.Time      `bson:"updatedAt"            json:"updatedAt"`
+	// PublishedAt is set when a poem first becomes public (either created directly
+	// as public, or when a draft transitions private→public).  Used as the sort key
+	// so that publishing an old draft surfaces it as a new entry at the top of lists.
+	PublishedAt   *time.Time     `bson:"publishedAt,omitempty" json:"publishedAt,omitempty"`
 }
 
 // PoemResponse is what the API returns — includes author info inline

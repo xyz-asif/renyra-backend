@@ -31,7 +31,13 @@ func NewRepository(db *mongo.Database) Repository {
 	}
 }
 
-// GetHomeFeed returns poems from a list of author IDs, cursor-paginated, newest first.
+// GetHomeFeed returns poems from a list of author IDs, cursor-paginated by publishedAt DESC.
+//
+// Sort: publishedAt DESC, _id DESC — same as GetByAuthor so that drafts published
+// later surface as new content at the top of followers' feeds (not buried by old _id).
+//
+// The cursor is the last poem's _id (API unchanged). We look up its publishedAt to
+// build an accurate compound keyset filter, same pattern used in GetByAuthor.
 func (r *repository) GetHomeFeed(ctx context.Context, authorIDs []bson.ObjectID, limit int, beforeID *bson.ObjectID) ([]models.Poem, error) {
 	if len(authorIDs) == 0 {
 		return []models.Poem{}, nil
@@ -42,12 +48,27 @@ func (r *repository) GetHomeFeed(ctx context.Context, authorIDs []bson.ObjectID,
 		"visibility": models.PoemVisibilityPublic,
 		"isDeleted":  false,
 	}
+
 	if beforeID != nil {
-		filter["_id"] = bson.M{"$lt": *beforeID}
+		var cursorPoem models.Poem
+		lookupErr := r.poems.FindOne(ctx, bson.M{"_id": *beforeID}).Decode(&cursorPoem)
+
+		if lookupErr == nil && cursorPoem.PublishedAt != nil {
+			filter["$or"] = []bson.M{
+				{"publishedAt": bson.M{"$not": bson.M{"$gte": *cursorPoem.PublishedAt}}},
+				{"publishedAt": *cursorPoem.PublishedAt, "_id": bson.M{"$lt": *beforeID}},
+			}
+		} else {
+			// Cursor poem has no publishedAt (legacy data) — fall back to _id cursor.
+			filter["_id"] = bson.M{"$lt": *beforeID}
+		}
 	}
 
 	opts := options.Find().
-		SetSort(bson.D{{Key: "_id", Value: -1}}).
+		SetSort(bson.D{
+			{Key: "publishedAt", Value: -1},
+			{Key: "_id", Value: -1},
+		}).
 		SetLimit(int64(limit))
 
 	cursor, err := r.poems.Find(ctx, filter, opts)
@@ -85,7 +106,9 @@ func (r *repository) GetExploreFeed(ctx context.Context, hashtag string, limit i
 		{{Key: "$match", Value: matchFilter}},
 
 		// Stage 2: compute engagement score
-		// hoursSincePosted = (now_unix - createdAt_unix) / 3600
+		// hoursSincePosted = (now_unix - publishedAt_unix) / 3600
+		// Use publishedAt when available (drafts published later should not be penalised
+		// for their old createdAt). Fall back to createdAt for legacy poems without publishedAt.
 		// score = (likes*3) + (comments*2) + (reposts*1.5) - (hoursSince * 0.5)
 		{{Key: "$addFields", Value: bson.M{
 			"engagementScore": bson.M{
@@ -99,7 +122,7 @@ func (r *repository) GetExploreFeed(ctx context.Context, hashtag string, limit i
 						bson.M{"$divide": []interface{}{
 							bson.M{"$subtract": []interface{}{
 								bson.M{"$toLong": "$$NOW"},
-								bson.M{"$toLong": "$createdAt"},
+								bson.M{"$toLong": bson.M{"$ifNull": []interface{}{"$publishedAt", "$createdAt"}}},
 							}},
 							3600000, // ms → hours
 						}},
@@ -203,7 +226,7 @@ func (r *repository) GetAudioFeed(ctx context.Context, limit int, offset int) ([
 		"isRepost":   false,  // reposts should not appear in audio feed
 	}
 
-	// Same engagement scoring as explore feed
+	// Same engagement scoring as explore feed — use publishedAt for age decay
 	pipeline := mongo.Pipeline{
 		{{Key: "$match", Value: matchFilter}},
 		{{Key: "$addFields", Value: bson.M{
@@ -218,7 +241,7 @@ func (r *repository) GetAudioFeed(ctx context.Context, limit int, offset int) ([
 						bson.M{"$divide": []interface{}{
 							bson.M{"$subtract": []interface{}{
 								bson.M{"$toLong": "$$NOW"},
-								bson.M{"$toLong": "$createdAt"},
+								bson.M{"$toLong": bson.M{"$ifNull": []interface{}{"$publishedAt", "$createdAt"}}},
 							}},
 							3600000,
 						}},

@@ -34,6 +34,9 @@ type PoemUpdateFields struct {
 	Description   string
 	TextAlign     string
 	Mentions      []bson.ObjectID
+	// PublishedAt is non-nil only on a private→public transition.
+	// The repository sets it in the document only when provided.
+	PublishedAt   *time.Time
 }
 
 type repository struct {
@@ -51,12 +54,19 @@ func NewRepository(db *mongo.Database) Repository {
 }
 
 func (r *repository) Create(ctx context.Context, poem *models.Poem) error {
-	poem.CreatedAt = time.Now()
-	poem.UpdatedAt = time.Now()
+	now := time.Now()
+	poem.CreatedAt = now
+	poem.UpdatedAt = now
 	poem.IsDeleted = false
 	poem.LikesCount = 0
 	poem.CommentsCount = 0
 	poem.RepostsCount = 0
+
+	// Set publishedAt immediately for poems created directly as public so they
+	// sort correctly alongside drafts that are later published.
+	if poem.Visibility == models.PoemVisibilityPublic {
+		poem.PublishedAt = &now
+	}
 
 	res, err := r.poems.InsertOne(ctx, poem)
 	if err != nil {
@@ -76,30 +86,34 @@ func (r *repository) GetByID(ctx context.Context, poemID bson.ObjectID) (*models
 }
 
 func (r *repository) Update(ctx context.Context, poemID bson.ObjectID, fields PoemUpdateFields) (*models.Poem, error) {
-	update := bson.M{
-		"$set": bson.M{
-			"title":         fields.Title,
-			"contentJson":   fields.ContentJSON,
-			"plainText":     fields.PlainText,
-			"hashtags":      fields.Hashtags,
-			"mood":          fields.Mood,
-			"isOriginal":    fields.IsOriginal,
-			"visibility":    fields.Visibility,
-			"audioUrl":      fields.AudioURL,
-			"audioDuration": fields.AudioDuration,
-			"coverColor":    fields.CoverColor,
-			"description":   fields.Description,
-			"textAlign":     fields.TextAlign,
-			"mentions":      fields.Mentions,
-			"updatedAt":     time.Now(),
-		},
+	set := bson.M{
+		"title":         fields.Title,
+		"contentJson":   fields.ContentJSON,
+		"plainText":     fields.PlainText,
+		"hashtags":      fields.Hashtags,
+		"mood":          fields.Mood,
+		"isOriginal":    fields.IsOriginal,
+		"visibility":    fields.Visibility,
+		"audioUrl":      fields.AudioURL,
+		"audioDuration": fields.AudioDuration,
+		"coverColor":    fields.CoverColor,
+		"description":   fields.Description,
+		"textAlign":     fields.TextAlign,
+		"mentions":      fields.Mentions,
+		"updatedAt":     time.Now(),
+	}
+
+	// Only stamp publishedAt on the private→public transition.
+	// The service sets this field; we must never overwrite an existing publishedAt.
+	if fields.PublishedAt != nil {
+		set["publishedAt"] = fields.PublishedAt
 	}
 
 	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
 	var poem models.Poem
 	err := r.poems.FindOneAndUpdate(ctx,
 		bson.M{"_id": poemID, "isDeleted": false},
-		update,
+		bson.M{"$set": set},
 		opts,
 	).Decode(&poem)
 	if err != nil {
@@ -119,6 +133,12 @@ func (r *repository) SoftDelete(ctx context.Context, poemID, authorID bson.Objec
 // GetByAuthor returns poems by a specific author with cursor-based pagination.
 // includePrivate = true only when the caller IS the author (my poems endpoint).
 // includePrivate = false for public profile view (only returns public poems).
+//
+// Sort order: publishedAt DESC, _id DESC.
+// Poems without publishedAt (drafts, legacy data) sort after all published poems.
+//
+// The cursor is still the last poem's _id (API unchanged). We look up the cursor
+// poem's publishedAt to build an accurate compound keyset filter.
 func (r *repository) GetByAuthor(ctx context.Context, authorID bson.ObjectID, limit int, beforeID *bson.ObjectID, includePrivate bool) ([]models.Poem, error) {
 	filter := bson.M{
 		"authorId":  authorID,
@@ -131,11 +151,33 @@ func (r *repository) GetByAuthor(ctx context.Context, authorID bson.ObjectID, li
 	}
 
 	if beforeID != nil {
-		filter["_id"] = bson.M{"$lt": *beforeID}
+		// Look up the cursor poem to get its publishedAt.  One indexed read; cost
+		// is negligible and keeps the public API (before=<id>) unchanged.
+		var cursorPoem models.Poem
+		lookupErr := r.poems.FindOne(ctx, bson.M{"_id": *beforeID}).Decode(&cursorPoem)
+
+		if lookupErr == nil && cursorPoem.PublishedAt != nil {
+			// Compound keyset: items that sort strictly after the cursor position.
+			//   - publishedAt older than cursor's publishedAt   (includes null — see $not/$gte)
+			//   - OR same publishedAt with a smaller _id        (tiebreaker)
+			// Using $not/$gte so that null/missing publishedAt docs are captured by
+			// the first branch (MongoDB excludes null from straight $lt comparisons).
+			filter["$or"] = []bson.M{
+				{"publishedAt": bson.M{"$not": bson.M{"$gte": *cursorPoem.PublishedAt}}},
+				{"publishedAt": *cursorPoem.PublishedAt, "_id": bson.M{"$lt": *beforeID}},
+			}
+		} else {
+			// Cursor poem has no publishedAt (draft or legacy data).  All items that
+			// sort after it also have no publishedAt, so _id is the correct key.
+			filter["_id"] = bson.M{"$lt": *beforeID}
+		}
 	}
 
 	opts := options.Find().
-		SetSort(bson.D{{Key: "_id", Value: -1}}).
+		SetSort(bson.D{
+			{Key: "publishedAt", Value: -1},
+			{Key: "_id", Value: -1},
+		}).
 		SetLimit(int64(limit))
 
 	cursor, err := r.poems.Find(ctx, filter, opts)
