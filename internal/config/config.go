@@ -62,6 +62,21 @@ func LoadConfig() (*Config, error) {
 	viper.SetConfigFile(".env")
 	viper.AutomaticEnv()
 
+	// Explicitly bind every key so that viper.Unmarshal picks up env vars.
+	// AutomaticEnv() alone only works with viper.Get(), not Unmarshal.
+	for _, key := range []string{
+		"PORT", "MONGODB_URI", "DATABASE_NAME", "FIREBASE_PROJECT_ID",
+		"JWT_SECRET", "JWT_EXPIRE",
+		"FIREBASE_TYPE", "FIREBASE_PRIVATE_KEY_ID", "FIREBASE_PRIVATE_KEY",
+		"FIREBASE_CLIENT_EMAIL", "FIREBASE_CLIENT_ID", "FIREBASE_AUTH_URI",
+		"FIREBASE_TOKEN_URI", "FIREBASE_AUTH_PROVIDER_X509_CERT_URL",
+		"FIREBASE_CLIENT_X509_CERT_URL", "FIREBASE_UNIVERSE_DOMAIN",
+	} {
+		if err := viper.BindEnv(key); err != nil {
+			log.Printf("Warning: failed to bind env var %s: %v", key, err)
+		}
+	}
+
 	// Set defaults
 	viper.SetDefault("PORT", "8080")
 	viper.SetDefault("DATABASE_NAME", "chat_db")
