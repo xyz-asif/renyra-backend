@@ -61,8 +61,8 @@ func main() {
 
 	// Initialize Firebase App globally
 	var opts []option.ClientOption
-	if cfg.FirebaseCredsPath != "" {
-		opts = append(opts, option.WithCredentialsFile(cfg.FirebaseCredsPath))
+	if credsJSON := cfg.GetFirebaseCredentialsJSON(); credsJSON != nil {
+		opts = append(opts, option.WithCredentialsJSON(credsJSON))
 	}
 	firebaseApp, err := firebase.NewApp(context.Background(), &firebase.Config{ProjectID: cfg.FirebaseProjectID}, opts...)
 	if err != nil {
