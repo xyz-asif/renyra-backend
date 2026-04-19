@@ -31,47 +31,135 @@ func NewRepository(db *mongo.Database) Repository {
 	}
 }
 
-// GetHomeFeed returns poems from a list of author IDs, cursor-paginated by publishedAt DESC.
+// GetHomeFeed returns poems from a list of author IDs, cursor-paginated by publishedAt DESC,
+// with deduplication so that the same underlying poem never appears twice.
 //
-// Sort: publishedAt DESC, _id DESC — same as GetByAuthor so that drafts published
-// later surface as new content at the top of followers' feeds (not buried by old _id).
+// Deduplication rule:
+//   - Both an original post and a repost of the same poem can match the author filter
+//     (e.g. user A posted it, user B reposted it, caller follows both).
+//   - We group by the "underlying poem id" (originalId for reposts, _id for originals)
+//     and keep exactly one entry per poem.
+//   - Priority 0 (preferred): repost whose reposter ≠ original author → shows "X reposted" banner.
+//   - Priority 1 (fallback): original post, or a self-repost (author reposts their own poem).
 //
-// The cursor is the last poem's _id (API unchanged). We look up its publishedAt to
-// build an accurate compound keyset filter, same pattern used in GetByAuthor.
+// Cursor: keyset on (publishedAt DESC, _id DESC) — unchanged from original implementation.
 func (r *repository) GetHomeFeed(ctx context.Context, authorIDs []bson.ObjectID, limit int, beforeID *bson.ObjectID) ([]models.Poem, error) {
 	if len(authorIDs) == 0 {
 		return []models.Poem{}, nil
 	}
 
-	filter := bson.M{
+	matchFilter := bson.M{
 		"authorId":   bson.M{"$in": authorIDs},
 		"visibility": models.PoemVisibilityPublic,
 		"isDeleted":  false,
 	}
 
+	// Apply cursor-keyset pagination filter.
 	if beforeID != nil {
 		var cursorPoem models.Poem
 		lookupErr := r.poems.FindOne(ctx, bson.M{"_id": *beforeID}).Decode(&cursorPoem)
 
 		if lookupErr == nil && cursorPoem.PublishedAt != nil {
-			filter["$or"] = []bson.M{
+			matchFilter["$or"] = []bson.M{
 				{"publishedAt": bson.M{"$not": bson.M{"$gte": *cursorPoem.PublishedAt}}},
 				{"publishedAt": *cursorPoem.PublishedAt, "_id": bson.M{"$lt": *beforeID}},
 			}
 		} else {
 			// Cursor poem has no publishedAt (legacy data) — fall back to _id cursor.
-			filter["_id"] = bson.M{"$lt": *beforeID}
+			matchFilter["_id"] = bson.M{"$lt": *beforeID}
 		}
 	}
 
-	opts := options.Find().
-		SetSort(bson.D{
+	pipeline := mongo.Pipeline{
+		// Stage 1: filter candidates by author set, visibility, deletion state, and cursor.
+		{{Key: "$match", Value: matchFilter}},
+
+		// Stage 2: initial feed sort so that, when priorities are equal,
+		// $first in the $group stage picks the most-recent entry.
+		{{Key: "$sort", Value: bson.D{
 			{Key: "publishedAt", Value: -1},
 			{Key: "_id", Value: -1},
-		}).
-		SetLimit(int64(limit))
+		}}},
 
-	cursor, err := r.poems.Find(ctx, filter, opts)
+		// Stage 3: compute the deduplication key.
+		// Reposts reference their source poem via originalId; originals use their own _id.
+		{{Key: "$addFields", Value: bson.M{
+			"_underlyingPoemId": bson.M{
+				"$ifNull": []interface{}{"$originalId", "$_id"},
+			},
+		}}},
+
+		// Stage 4: join the original poem to detect self-reposts.
+		// We only need the original author's ID to decide whether to show the repost banner.
+		// Non-reposts produce an empty _origDoc array (lookup condition is false).
+		{{Key: "$lookup", Value: bson.M{
+			"from": "poems",
+			"let":  bson.M{"oid": "$originalId", "isRepost": "$isRepost"},
+			"pipeline": mongo.Pipeline{
+				{{Key: "$match", Value: bson.M{
+					"$expr": bson.M{"$and": []interface{}{
+						bson.M{"$eq": []interface{}{"$$isRepost", true}},
+						bson.M{"$eq": []interface{}{"$_id", "$$oid"}},
+					}},
+				}}},
+				{{Key: "$project", Value: bson.M{"authorId": 1}}},
+			},
+			"as": "_origDoc",
+		}}},
+
+		// Stage 5a: extract the original author ID (null for originals or deleted originals).
+		{{Key: "$addFields", Value: bson.M{
+			"_origAuthorId": bson.M{
+				"$arrayElemAt": []interface{}{"$_origDoc.authorId", 0},
+			},
+		}}},
+
+		// Stage 5b: assign priority for group winner selection.
+		// priority=0 → repost by a DIFFERENT author (preferred — shows "X reposted" banner).
+		// priority=1 → original post, OR self-repost (author reposts their own poem).
+		{{Key: "$addFields", Value: bson.M{
+			"_priority": bson.M{
+				"$cond": bson.M{
+					"if": bson.M{"$and": []interface{}{
+						bson.M{"$eq": []interface{}{"$isRepost", true}},
+						bson.M{"$ne": []interface{}{"$authorId", "$_origAuthorId"}},
+					}},
+					"then": 0,
+					"else": 1,
+				},
+			},
+		}}},
+
+		// Stage 6: re-sort so that the preferred entry (lower priority) for each poem
+		// comes first in the document stream, making $first in $group pick it.
+		{{Key: "$sort", Value: bson.D{
+			{Key: "_priority", Value: 1},    // 0 (repost by other) before 1 (original)
+			{Key: "publishedAt", Value: -1},
+			{Key: "_id", Value: -1},
+		}}},
+
+		// Stage 7: deduplicate — one document per underlying poem; first wins.
+		{{Key: "$group", Value: bson.M{
+			"_id": "$_underlyingPoemId",
+			"doc": bson.M{"$first": "$$ROOT"},
+		}}},
+
+		// Stage 8: restore the winning document as the pipeline root.
+		// Temporary fields (_priority, _origDoc, etc.) are not in models.Poem
+		// and will be silently ignored during BSON decoding.
+		{{Key: "$replaceRoot", Value: bson.M{"newRoot": "$doc"}}},
+
+		// Stage 9: re-apply feed sort after $group disrupted the order.
+		{{Key: "$sort", Value: bson.D{
+			{Key: "publishedAt", Value: -1},
+			{Key: "_id", Value: -1},
+		}}},
+
+		// Stage 10: limit output (caller passes limit+1 so the service can detect hasMore).
+		{{Key: "$limit", Value: int64(limit)}},
+	}
+
+	cursor, err := r.poems.Aggregate(ctx, pipeline)
 	if err != nil {
 		return nil, err
 	}
