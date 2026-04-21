@@ -240,11 +240,12 @@ func (s *service) GetNotifications(ctx context.Context, userIDStr string, limit 
 			ActorID:       n.ActorID.Hex(),
 			IsRead:        n.IsRead,
 			CreatedAt:     n.CreatedAt,
-			ActorPhotoURL: n.ImageURL, // stored at creation time
+			ActorPhotoURL: "", // populated below from fresh actor data
 		}
 
 		if actor, ok := actorMap[n.ActorID]; ok && actor != nil {
 			resp.ActorName = actor.DisplayName
+			resp.ActorPhotoURL = actor.PhotoURL // use fresh photo, not stale n.ImageURL
 		}
 
 		responses = append(responses, resp)
