@@ -109,6 +109,21 @@ func (h *Handler) ToggleCommentLike(c *fiber.Ctx) error {
 	return response.OK(c, "OK", fiber.Map{"liked": liked, "likesCount": count})
 }
 
+// GET /api/v1/poems/:id/reposters?limit=20&before=<id>
+func (h *Handler) GetPoemReposters(c *fiber.Ctx) error {
+	poemID := c.Params("id")
+	limit := c.QueryInt("limit", 20)
+	if limit > 50 {
+		limit = 50
+	}
+	before := c.Query("before")
+	users, hasMore, err := h.service.GetPoemReposters(c.Context(), poemID, limit, before)
+	if err != nil {
+		return response.BadRequest(c, err.Error())
+	}
+	return response.OK(c, "Reposters retrieved", fiber.Map{"users": users, "hasMore": hasMore})
+}
+
 // POST /api/v1/poems/:id/repost
 func (h *Handler) ToggleRepost(c *fiber.Ctx) error {
 	user, ok := c.Locals("user").(*models.User)

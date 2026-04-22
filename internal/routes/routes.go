@@ -178,6 +178,7 @@ func SetupRoutes(
 
 	// ── Social: Reposts ──
 	api.Post("/poems/:id/repost", authMiddleware.Protect(), strictRateLimit, socialHandler.ToggleRepost)
+	api.Get("/poems/:id/reposters", authMiddleware.OptionalAuth(), socialHandler.GetPoemReposters)
 	api.Get("/users/:id/reposts", authMiddleware.OptionalAuth(), socialHandler.GetUserReposts)
 
 	// ── Feed ──

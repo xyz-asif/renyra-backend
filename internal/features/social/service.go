@@ -32,6 +32,7 @@ type Service interface {
 	// Reposts
 	ToggleRepost(ctx context.Context, userIDStr, poemIDStr string) (bool, int, error)
 	GetUserReposts(ctx context.Context, userIDStr string, callerIDStr string, limit int, before string) (*models.FeedPage, error)
+	GetPoemReposters(ctx context.Context, poemIDStr string, limit int, before string) ([]models.UserSearchResult, bool, error)
 }
 
 type service struct {
@@ -511,6 +512,69 @@ func (s *service) ToggleCommentLike(ctx context.Context, userIDStr, commentIDStr
 }
 
 // ── Reposts ──
+
+func (s *service) GetPoemReposters(ctx context.Context, poemIDStr string, limit int, before string) ([]models.UserSearchResult, bool, error) {
+	poemID, err := bson.ObjectIDFromHex(poemIDStr)
+	if err != nil {
+		return nil, false, errors.New("invalid poem id")
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 50 {
+		limit = 50
+	}
+
+	var beforeID *bson.ObjectID
+	if before != "" {
+		id, err := bson.ObjectIDFromHex(before)
+		if err != nil {
+			return nil, false, errors.New("invalid before cursor")
+		}
+		beforeID = &id
+	}
+
+	reposts, err := s.repo.GetPoemReposters(ctx, poemID, limit+1, beforeID)
+	if err != nil {
+		return nil, false, err
+	}
+
+	hasMore := len(reposts) > limit
+	if hasMore {
+		reposts = reposts[:limit]
+	}
+
+	// Extract unique author IDs (a user can only repost once, but be safe)
+	seen := make(map[bson.ObjectID]bool, len(reposts))
+	ids := make([]bson.ObjectID, 0, len(reposts))
+	for _, rp := range reposts {
+		if !seen[rp.AuthorID] {
+			seen[rp.AuthorID] = true
+			ids = append(ids, rp.AuthorID)
+		}
+	}
+
+	userMap, err := s.userRepo.GetUsersByIDs(ctx, ids)
+	if err != nil {
+		return nil, false, err
+	}
+
+	results := make([]models.UserSearchResult, 0, len(ids))
+	for _, id := range ids {
+		user, ok := userMap[id]
+		if !ok {
+			continue // skip deleted / deactivated users
+		}
+		results = append(results, models.UserSearchResult{
+			ID:          user.ID.Hex(),
+			DisplayName: user.DisplayName,
+			Username:    user.Username,
+			PhotoURL:    user.PhotoURL,
+			IsEditor:    user.IsEditor,
+		})
+	}
+	return results, hasMore, nil
+}
 
 func (s *service) ToggleRepost(ctx context.Context, userIDStr, poemIDStr string) (bool, int, error) {
 	userID, err := bson.ObjectIDFromHex(userIDStr)

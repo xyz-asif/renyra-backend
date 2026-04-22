@@ -18,6 +18,7 @@ type Repository interface {
 	IsPoemLikedMany(ctx context.Context, userID bson.ObjectID, poemIDs []bson.ObjectID) (map[string]bool, error)
 	IsPoemRepostedMany(ctx context.Context, userID bson.ObjectID, poemIDs []bson.ObjectID) (map[string]bool, error)
 	GetPoemLikers(ctx context.Context, poemID bson.ObjectID, limit int, beforeID *bson.ObjectID) ([]models.PoemLike, error)
+	GetPoemReposters(ctx context.Context, poemID bson.ObjectID, limit int, beforeID *bson.ObjectID) ([]models.Poem, error)
 
 	// Comments
 	CreateComment(ctx context.Context, comment *models.Comment) error
@@ -136,6 +137,28 @@ func (r *repository) GetPoemLikers(ctx context.Context, poemID bson.ObjectID, li
 	}
 	defer cursor.Close(ctx)
 	var result []models.PoemLike
+	if err := cursor.All(ctx, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (r *repository) GetPoemReposters(ctx context.Context, poemID bson.ObjectID, limit int, beforeID *bson.ObjectID) ([]models.Poem, error) {
+	filter := bson.M{
+		"isRepost":   true,
+		"originalId": poemID,
+		"isDeleted":  false,
+	}
+	if beforeID != nil {
+		filter["_id"] = bson.M{"$lt": *beforeID}
+	}
+	opts := options.Find().SetSort(bson.D{{Key: "_id", Value: -1}}).SetLimit(int64(limit))
+	cursor, err := r.poems.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+	var result []models.Poem
 	if err := cursor.All(ctx, &result); err != nil {
 		return nil, err
 	}
