@@ -24,6 +24,8 @@ const (
 	ResourceTypePoem           = "poem"
 	ResourceTypeBugReport      = "bug_report"
 	ResourceTypeFeatureRequest = "feature_request"
+	ResourceTypeReportUser     = "report_user"
+	ResourceTypeReportPost     = "report_post"
 )
 
 // Notification is the DB document stored in the "notifications" collection.

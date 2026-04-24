@@ -23,6 +23,7 @@ import (
 	"github.com/xyz-asif/renyra-backend/internal/features/connections"
 	"github.com/xyz-asif/renyra-backend/internal/features/feed"
 	"github.com/xyz-asif/renyra-backend/internal/features/follows"
+	"github.com/xyz-asif/renyra-backend/internal/features/moderation_reports"
 	"github.com/xyz-asif/renyra-backend/internal/features/notifications"
 	"github.com/xyz-asif/renyra-backend/internal/features/poems"
 	"github.com/xyz-asif/renyra-backend/internal/features/profile"
@@ -126,6 +127,11 @@ func main() {
 	reportService := reports.NewService(reportRepo, notifService)
 	reportHandler := reports.NewHandler(reportService)
 
+	// Initialize Moderation Reports feature
+	moderationReportRepo := moderation_reports.NewRepository(db.Database)
+	moderationReportService := moderation_reports.NewService(moderationReportRepo, notifService, userRepo, poemRepo)
+	moderationReportHandler := moderation_reports.NewHandler(moderationReportService)
+
 	// 5. Setup Auth feature (JWT exchange / refresh / logout)
 	authRepo := auth.NewRepository(db.Database)
 	authService := auth.NewService(authRepo, userService, firebaseApp, cfg)
@@ -170,6 +176,7 @@ func main() {
 		feedHandler,
 		socialHandler,
 		reportHandler,
+		moderationReportHandler,
 		db.Database,
 	)
 	// 8. Start Server (Graceful Shutdown)

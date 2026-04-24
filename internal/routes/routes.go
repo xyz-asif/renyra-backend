@@ -13,6 +13,7 @@ import (
 	"github.com/xyz-asif/renyra-backend/internal/features/connections"
 	"github.com/xyz-asif/renyra-backend/internal/features/feed"
 	"github.com/xyz-asif/renyra-backend/internal/features/follows"
+	"github.com/xyz-asif/renyra-backend/internal/features/moderation_reports"
 	"github.com/xyz-asif/renyra-backend/internal/features/notifications"
 	"github.com/xyz-asif/renyra-backend/internal/features/poems"
 	"github.com/xyz-asif/renyra-backend/internal/features/profile"
@@ -38,6 +39,7 @@ func SetupRoutes(
 	feedHandler *feed.Handler,
 	socialHandler *social.Handler,
 	reportHandler *reports.Handler,
+	moderationReportHandler *moderation_reports.Handler,
 	db *mongo.Database,
 ) {
 	// API v1 group with global 10-second timeout
@@ -145,6 +147,13 @@ func SetupRoutes(
 	reportsGroup.Get("/me", authMiddleware.Protect(), reportHandler.GetMyReports)
 	reportsGroup.Patch("/:id", reportHandler.UpdateReport) // public for developer/admin
 	reportsGroup.Get("/", reportHandler.GetReports)        // public list
+
+	// ── Moderation Reports (Content/User Reports) ──
+	moderationReportsGroup := api.Group("/moderation-reports")
+	moderationReportsGroup.Post("/", authMiddleware.Protect(), strictRateLimit, moderationReportHandler.CreateReport)
+	moderationReportsGroup.Get("/me", authMiddleware.Protect(), moderationReportHandler.GetMyReports)
+	moderationReportsGroup.Get("/", moderationReportHandler.GetAllReports)     // admin use
+	moderationReportsGroup.Patch("/:id", moderationReportHandler.UpdateReport)   // admin use
 
 	// ── Profile Setup ──
 	api.Post("/users/setup", authMiddleware.Protect(), profileHandler.SetupProfile)
