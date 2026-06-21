@@ -26,6 +26,8 @@ type Repository interface {
 	DecrementFollowingCount(ctx context.Context, userID bson.ObjectID) error
 	GetUserByUsername(ctx context.Context, username string) (*models.User, error)
 	SearchUsers(ctx context.Context, query string, limit, offset int) ([]models.User, error)
+	ListAllUsers(ctx context.Context, query string, limit, offset int, sortBy, sortDir string) ([]models.User, error)
+	CountAllUsers(ctx context.Context, query string) (int64, error)
 	AddFCMToken(ctx context.Context, userID bson.ObjectID, token string) error
 	RemoveFCMTokens(ctx context.Context, userID bson.ObjectID, tokens []string) error
 	IncrementPostsCount(ctx context.Context, userID bson.ObjectID) error
@@ -101,8 +103,6 @@ func (r *repository) IncrementProfileViews(ctx context.Context, userID bson.Obje
 	return err
 }
 
-
-
 func (r *repository) GetUserByUsername(ctx context.Context, username string) (*models.User, error) {
 	var user models.User
 	err := r.collection.FindOne(ctx, bson.M{"username": username}).Decode(&user)
@@ -140,6 +140,69 @@ func (r *repository) SearchUsers(ctx context.Context, query string, limit, offse
 	}
 
 	return users, nil
+}
+
+// buildAdminUserFilter builds the Mongo filter used by the admin user-listing
+// endpoints. An empty query matches every user; a non-empty query does a
+// case-insensitive match across displayName, username and email.
+func buildAdminUserFilter(query string) bson.M {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return bson.M{}
+	}
+	safeQuery := regexp.QuoteMeta(query)
+	return bson.M{
+		"$or": []bson.M{
+			{"displayName": bson.M{"$regex": safeQuery, "$options": "i"}},
+			{"username": bson.M{"$regex": safeQuery, "$options": "i"}},
+			{"email": bson.M{"$regex": safeQuery, "$options": "i"}},
+		},
+	}
+}
+
+// ListAllUsers returns every user (optionally filtered by query) with pagination
+// and sorting. Unlike SearchUsers it does NOT restrict to active users, so the
+// admin app can see banned/inactive accounts too.
+func (r *repository) ListAllUsers(ctx context.Context, query string, limit, offset int, sortBy, sortDir string) ([]models.User, error) {
+	filter := buildAdminUserFilter(query)
+
+	// Whitelist sortable fields to avoid arbitrary key sorting.
+	allowedSort := map[string]bool{
+		"createdAt":      true,
+		"lastLoginAt":    true,
+		"displayName":    true,
+		"followersCount": true,
+		"postsCount":     true,
+	}
+	if !allowedSort[sortBy] {
+		sortBy = "createdAt"
+	}
+	dir := -1 // default newest first
+	if sortDir == "asc" {
+		dir = 1
+	}
+
+	findOptions := options.Find().
+		SetLimit(int64(limit)).
+		SetSkip(int64(offset)).
+		SetSort(bson.D{{Key: sortBy, Value: dir}})
+
+	cursor, err := r.collection.Find(ctx, filter, findOptions)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var users []models.User
+	if err := cursor.All(ctx, &users); err != nil {
+		return nil, err
+	}
+	return users, nil
+}
+
+// CountAllUsers returns the total number of users matching the query.
+func (r *repository) CountAllUsers(ctx context.Context, query string) (int64, error) {
+	return r.collection.CountDocuments(ctx, buildAdminUserFilter(query))
 }
 
 // GetUsersByIDs fetches multiple users by their ObjectIDs in a single query

@@ -36,6 +36,10 @@ type Repository interface {
 	// (cursor-based / keyset pagination — O(1) regardless of page depth).
 	GetMessagesByRoom(ctx context.Context, roomID bson.ObjectID, limit int, beforeID *bson.ObjectID) ([]models.Message, error)
 	UpdateRoomLastMessage(ctx context.Context, roomID bson.ObjectID, lastMessage, lastMessageType string, senderID bson.ObjectID) error
+	// UpdateRoomLastMessagePreview updates only the cached last-message preview
+	// text, without changing lastUpdated — used when a message is deleted/edited
+	// so the room's preview changes but the room does not jump in the list.
+	UpdateRoomLastMessagePreview(ctx context.Context, roomID bson.ObjectID, lastMessage string) error
 	UpdateMessageStatus(ctx context.Context, messageID bson.ObjectID, status string) error
 	UpdateMessageReaction(ctx context.Context, messageID bson.ObjectID, userID, emoji string) error
 	UpdateMessageContent(ctx context.Context, messageID bson.ObjectID, content string) error
@@ -406,6 +410,12 @@ func (r *repository) UpdateRoomLastMessage(ctx context.Context, roomID bson.Obje
 			"lastUpdated":         time.Now(),
 		},
 	}
+	_, err := r.rooms.UpdateOne(ctx, bson.M{"_id": roomID}, update)
+	return err
+}
+
+func (r *repository) UpdateRoomLastMessagePreview(ctx context.Context, roomID bson.ObjectID, lastMessage string) error {
+	update := bson.M{"$set": bson.M{"lastMessage": lastMessage}}
 	_, err := r.rooms.UpdateOne(ctx, bson.M{"_id": roomID}, update)
 	return err
 }

@@ -557,6 +557,11 @@ func (s *service) EditMessage(ctx context.Context, userIDStr, messageIDStr, cont
 	return nil
 }
 
+// deletedMessagePreview is the chat-list preview text shown for a deleted
+// message. Kept in sync with the placeholder content the repository writes in
+// SoftDeleteMessage and the frontend's local placeholder.
+const deletedMessagePreview = "This message was deleted"
+
 func (s *service) DeleteMessage(ctx context.Context, userIDStr, messageIDStr string) error {
 	senderID, err := bson.ObjectIDFromHex(userIDStr)
 	if err != nil {
@@ -583,6 +588,18 @@ func (s *service) DeleteMessage(ctx context.Context, userIDStr, messageIDStr str
 
 	if err := s.repo.SoftDeleteMessage(ctx, messageID); err != nil {
 		return err
+	}
+
+	// If the deleted message was the room's most recent one, persist the
+	// "deleted" placeholder as the room's last-message preview. Otherwise a
+	// later chat-list refresh would read the stale original text from the room
+	// document and show the deleted message again. lastUpdated is intentionally
+	// left untouched so the room does not jump in the list on a delete.
+	if latest, err := s.repo.GetMessagesByRoom(ctx, msg.RoomID, 1, nil); err == nil &&
+		len(latest) > 0 && latest[0].ID == messageID {
+		if err := s.repo.UpdateRoomLastMessagePreview(ctx, msg.RoomID, deletedMessagePreview); err != nil {
+			log.Printf("DeleteMessage: failed to update room last message preview for room %s: %v", msg.RoomID.Hex(), err)
+		}
 	}
 
 	// Broadcast deletion to the room

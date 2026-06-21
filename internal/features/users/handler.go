@@ -52,8 +52,6 @@ func (h *Handler) UpdateProfile(c *fiber.Ctx) error {
 	return response.OK(c, "Profile updated successfully", updatedUser)
 }
 
-
-
 // Search Users
 func (h *Handler) Search(c *fiber.Ctx) error {
 	query := c.Query("q", "")
@@ -95,6 +93,24 @@ func (h *Handler) SearchWithConnectionStatus(c *fiber.Ctx) error {
 	return response.OK(c, "Users retrieved with connection status", result)
 }
 
+// ListAllUsers returns a paginated list of every user in the system.
+// PUBLIC — no authentication required. Intended for the admin Flutter app.
+// Endpoint: GET /api/v1/admin/users?q=&limit=50&offset=0&sortBy=createdAt&sortDir=desc
+func (h *Handler) ListAllUsers(c *fiber.Ctx) error {
+	query := c.Query("q", "")
+	limit := c.QueryInt("limit", 50)
+	offset := c.QueryInt("offset", 0)
+	sortBy := c.Query("sortBy", "createdAt")
+	sortDir := c.Query("sortDir", "desc")
+
+	result, err := h.service.ListAllUsers(c.Context(), query, limit, offset, sortBy, sortDir)
+	if err != nil {
+		return response.InternalError(c, err.Error())
+	}
+
+	return response.OK(c, "Users retrieved", result)
+}
+
 // RegisterFCMToken saves the device's FCM token for push notifications.
 func (h *Handler) RegisterFCMToken(c *fiber.Ctx) error {
 	user, ok := c.Locals("user").(*models.User)
@@ -132,7 +148,7 @@ func (h *Handler) DeleteAccount(c *fiber.Ctx) error {
 
 	// Optional: You could read the 'reason' from query params if you prefer
 	// reason := c.Query("reason", req.Reason)
-	
+
 	if err := h.service.DeleteAccount(c.Context(), user.ID.Hex(), req.Reason); err != nil {
 		if strings.Contains(err.Error(), "required") || strings.Contains(err.Error(), "too long") {
 			return response.ValidationFailed(c, err.Error())
@@ -146,4 +162,3 @@ func (h *Handler) DeleteAccount(c *fiber.Ctx) error {
 	// Since they deleted the account, we return a success response
 	return response.OK(c, "Account deleted successfully", nil)
 }
-

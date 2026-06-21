@@ -100,6 +100,10 @@ func SetupRoutes(
 	usersGroup.Delete("/me", authMiddleware.VerifyToken, userHandler.DeleteAccount)
 	usersGroup.Post("/me/fcm-token", authMiddleware.VerifyToken, userHandler.RegisterFCMToken)
 
+	// ── Admin Routes (public — no auth; used by the admin Flutter app) ──
+	adminGroup := api.Group("/admin")
+	adminGroup.Get("/users", userHandler.ListAllUsers)
+
 	// ── Connection / Friend Request Routes ──
 	connGroup := api.Group("/connections")
 	connGroup.Post("/request", authMiddleware.VerifyToken, connectionHandler.SendRequest)
@@ -153,7 +157,7 @@ func SetupRoutes(
 	moderationReportsGroup.Post("/", authMiddleware.Protect(), strictRateLimit, moderationReportHandler.CreateReport)
 	moderationReportsGroup.Get("/me", authMiddleware.Protect(), moderationReportHandler.GetMyReports)
 	moderationReportsGroup.Get("/", moderationReportHandler.GetAllReports)     // admin use
-	moderationReportsGroup.Patch("/:id", moderationReportHandler.UpdateReport)   // admin use
+	moderationReportsGroup.Patch("/:id", moderationReportHandler.UpdateReport) // admin use
 
 	// ── Profile Setup ──
 	api.Post("/users/setup", authMiddleware.Protect(), profileHandler.SetupProfile)

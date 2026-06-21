@@ -23,6 +23,7 @@ type Service interface {
 	UpdateProfile(ctx context.Context, userID string, updates map[string]interface{}) (*models.User, error)
 	SearchUsers(ctx context.Context, query string, limit, offset int) ([]models.User, error)
 	SearchUsersWithConnectionStatus(ctx context.Context, currentUserID, query string, limit, offset int) (*UserSearchResult, error)
+	ListAllUsers(ctx context.Context, query string, limit, offset int, sortBy, sortDir string) (*AdminUserListResult, error)
 	GetFeed(ctx context.Context, userID string) ([]interface{}, error)
 	RegisterFCMToken(ctx context.Context, userID, token string) error
 	DeleteAccount(ctx context.Context, userID string, reason string) error
@@ -239,8 +240,6 @@ func (s *service) broadcastProfileUpdate(userID string, updates map[string]inter
 	}
 }
 
-
-
 func (s *service) SearchUsers(ctx context.Context, query string, limit, offset int) ([]models.User, error) {
 	if limit <= 0 {
 		limit = 20
@@ -271,7 +270,6 @@ func (s *service) RegisterFCMToken(ctx context.Context, userID, token string) er
 	}
 	return s.repo.AddFCMToken(ctx, uid, token)
 }
-
 
 // UserWithConnection represents a user with their connection status to the current user
 type UserWithConnection struct {
@@ -375,6 +373,103 @@ func (s *service) SearchUsersWithConnectionStatus(ctx context.Context, currentUs
 	return result, nil
 }
 
+// AdminUserItem is the curated, public-safe view of a user returned by the
+// admin user-listing endpoint. It deliberately omits sensitive fields such as
+// FCM device tokens and the Firebase UID.
+type AdminUserItem struct {
+	ID             string           `json:"id"`
+	Email          string           `json:"email"`
+	DisplayName    string           `json:"displayName"`
+	Username       string           `json:"username,omitempty"`
+	PhotoURL       string           `json:"photoURL"`
+	CoverImageURL  string           `json:"coverImageURL,omitempty"`
+	Bio            string           `json:"bio,omitempty"`
+	ExternalLink   string           `json:"externalLink,omitempty"`
+	IsProfileSetup bool             `json:"isProfileSetup"`
+	IsEditor       bool             `json:"isEditor"`
+	IsActive       bool             `json:"isActive"`
+	IsBanned       bool             `json:"isBanned"`
+	BannedReason   *string          `json:"bannedReason,omitempty"`
+	PostsCount     int              `json:"postsCount"`
+	FollowersCount int              `json:"followersCount"`
+	FollowingCount int              `json:"followingCount"`
+	Stats          models.UserStats `json:"stats"`
+	JoinedAt       time.Time        `json:"joinedAt"` // createdAt — date of joining
+	LastLoginAt    time.Time        `json:"lastLoginAt"`
+	UpdatedAt      time.Time        `json:"updatedAt"`
+}
+
+// AdminUserListResult is the paginated response for the admin user-listing endpoint.
+type AdminUserListResult struct {
+	Users      []AdminUserItem `json:"users"`
+	TotalCount int64           `json:"totalCount"`
+	Limit      int             `json:"limit"`
+	Offset     int             `json:"offset"`
+	HasMore    bool            `json:"hasMore"`
+}
+
+func toAdminUserItem(u models.User) AdminUserItem {
+	return AdminUserItem{
+		ID:             u.ID.Hex(),
+		Email:          u.Email,
+		DisplayName:    u.DisplayName,
+		Username:       u.Username,
+		PhotoURL:       u.PhotoURL,
+		CoverImageURL:  u.CoverImageURL,
+		Bio:            u.Bio,
+		ExternalLink:   u.ExternalLink,
+		IsProfileSetup: u.IsProfileSetup,
+		IsEditor:       u.IsEditor,
+		IsActive:       u.IsActive,
+		IsBanned:       u.IsBanned,
+		BannedReason:   u.BannedReason,
+		PostsCount:     u.PostsCount,
+		FollowersCount: u.FollowersCount,
+		FollowingCount: u.FollowingCount,
+		Stats:          u.Stats,
+		JoinedAt:       u.CreatedAt,
+		LastLoginAt:    u.LastLoginAt,
+		UpdatedAt:      u.UpdatedAt,
+	}
+}
+
+// ListAllUsers returns a paginated list of all users for the admin app.
+// No authentication is required for this endpoint.
+func (s *service) ListAllUsers(ctx context.Context, query string, limit, offset int, sortBy, sortDir string) (*AdminUserListResult, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	users, err := s.repo.ListAllUsers(ctx, query, limit, offset, sortBy, sortDir)
+	if err != nil {
+		return nil, err
+	}
+
+	total, err := s.repo.CountAllUsers(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]AdminUserItem, 0, len(users))
+	for _, u := range users {
+		items = append(items, toAdminUserItem(u))
+	}
+
+	return &AdminUserListResult{
+		Users:      items,
+		TotalCount: total,
+		Limit:      limit,
+		Offset:     offset,
+		HasMore:    int64(offset+len(items)) < total,
+	}, nil
+}
+
 func (s *service) DeleteAccount(ctx context.Context, userID string, reason string) error {
 	uid, err := bson.ObjectIDFromHex(userID)
 	if err != nil {
@@ -417,4 +512,3 @@ func (s *service) DeleteAccount(ctx context.Context, userID string, reason strin
 
 	return nil
 }
-

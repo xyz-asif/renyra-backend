@@ -1,7 +1,7 @@
 # Makefile for GoTodo
 # Usage: run `make <target>`
 
-.PHONY: help tidy build run run-api test lint air install-air docker-build docker-run fmt clean kill restart
+.PHONY: help tidy build run run-api test lint air install-air docker-build docker-run fmt clean kill restart seed
 
 ## help: Show this help
 help:
@@ -63,6 +63,10 @@ docker-run:
 ## clean: Remove build artifacts
 clean:
 	rm -rf bin
+
+## seed: Seed the database with persona poems and likes (run once from project root)
+seed:
+	go run ./cmd/seed
 
 ## db-reset: Drop the chat_db database to start fresh
 db-reset:
