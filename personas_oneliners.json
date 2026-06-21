@@ -1,0 +1,477 @@
+[
+    {
+        "email": "mailasifdev@gmail.com",
+        "poems": [
+            {
+                "title": "scroll",
+                "plainText": "we scroll past things that would have changed us.",
+                "hashtags": ["attention", "modernlife", "truth"],
+                "mood": "dark",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#0d1117"
+            },
+            {
+                "title": "performance",
+                "plainText": "everyone is performing normal.",
+                "hashtags": ["society", "masks", "truth"],
+                "mood": "dark",
+                "description": "everyone is performing normal.",
+                "textAlign": "left",
+                "coverColor": "#111827"
+            },
+            {
+                "title": "goodbye",
+                "plainText": "we said let's keep in touch and meant it as a goodbye.",
+                "hashtags": ["longing", "relationships", "truth"],
+                "mood": "grief",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1a0a0a"
+            },
+            {
+                "title": "",
+                "plainText": "some silences are louder than the thing that caused them.",
+                "hashtags": ["longing", "silence", "feelings"],
+                "mood": "longing",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#12101f"
+            },
+            {
+                "title": "",
+                "plainText": "the parts of me I like best were made in difficult years.",
+                "hashtags": ["growth", "resilience", "life"],
+                "mood": "life",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#0f172a"
+            },
+            {
+                "title": "privacy",
+                "plainText": "I keep my browser history and my real feelings private.",
+                "hashtags": ["humour", "truth", "modernlife"],
+                "mood": "humour",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1c1917"
+            },
+            {
+                "title": "3am",
+                "plainText": "the clock hit 3am and I remembered I was alive.",
+                "hashtags": ["night", "insomnia", "existence"],
+                "mood": "dark",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#0d1117"
+            },
+            {
+                "title": "",
+                "plainText": "I put my phone down and immediately felt proud of myself.",
+                "hashtags": ["humour", "habits", "modernlife"],
+                "mood": "humour",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1c1917"
+            },
+            {
+                "title": "WiFi",
+                "plainText": "the WiFi went out and we finally talked.",
+                "hashtags": ["humour", "connection", "modernlife"],
+                "mood": "humour",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#111827"
+            },
+            {
+                "title": "",
+                "plainText": "the things I am most afraid of have already happened.",
+                "hashtags": ["life", "fear", "truth"],
+                "mood": "life",
+                "description": "the things I am most afraid of have already happened.",
+                "textAlign": "left",
+                "coverColor": "#0f172a"
+            }
+        ]
+    },
+    {
+        "email": "asif1khanxyz@gmail.com",
+        "poems": [
+            {
+                "title": "number",
+                "plainText": "I kept your number after deleting everything else.",
+                "hashtags": ["longing", "love", "loss"],
+                "mood": "longing",
+                "description": "I kept your number after deleting everything else.",
+                "textAlign": "left",
+                "coverColor": "#1a0a2e"
+            },
+            {
+                "title": "",
+                "plainText": "we loved each other better in theory.",
+                "hashtags": ["love", "truth", "relationships"],
+                "mood": "love",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1a1625"
+            },
+            {
+                "title": "",
+                "plainText": "loving you was easy. the rest was not.",
+                "hashtags": ["love", "grief", "truth"],
+                "mood": "love",
+                "description": "loving you was easy. the rest was not.",
+                "textAlign": "left",
+                "coverColor": "#1a0a1a"
+            },
+            {
+                "title": "name",
+                "plainText": "she said my name differently when she meant it.",
+                "hashtags": ["love", "longing", "feelings"],
+                "mood": "love",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1a0a2e"
+            },
+            {
+                "title": "order",
+                "plainText": "I still know your coffee order and I don't know why I'm telling you.",
+                "hashtags": ["longing", "memory", "love"],
+                "mood": "longing",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#12101f"
+            },
+            {
+                "title": "",
+                "plainText": "we were the best version of each other and we walked away.",
+                "hashtags": ["grief", "love", "loss"],
+                "mood": "grief",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1a0a0a"
+            },
+            {
+                "title": "",
+                "plainText": "missing you is a full-time job with no benefits.",
+                "hashtags": ["longing", "humour", "love"],
+                "mood": "longing",
+                "description": "missing you is a full-time job with no benefits.",
+                "textAlign": "left",
+                "coverColor": "#1a1625"
+            },
+            {
+                "title": "ending",
+                "plainText": "I rewrote the ending three times and none of them worked.",
+                "hashtags": ["grief", "writing", "loss"],
+                "mood": "grief",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1a0a0a"
+            },
+            {
+                "title": "",
+                "plainText": "you left and the apartment kept your smell for a week.",
+                "hashtags": ["grief", "longing", "memory"],
+                "mood": "grief",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1a0a1a"
+            },
+            {
+                "title": "",
+                "plainText": "she called it complicated. I called it everything.",
+                "hashtags": ["love", "truth", "feelings"],
+                "mood": "love",
+                "description": "she called it complicated. I called it everything.",
+                "textAlign": "left",
+                "coverColor": "#1a0a2e"
+            }
+        ]
+    },
+    {
+        "email": "anchors.user@gmail.com",
+        "poems": [
+            {
+                "title": "",
+                "plainText": "the city taught me to want things I don't need.",
+                "hashtags": ["citylife", "dark", "truth"],
+                "mood": "dark",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1b1b2f"
+            },
+            {
+                "title": "commute",
+                "plainText": "I commuted two hours a day to be productive for someone else.",
+                "hashtags": ["work", "life", "urban"],
+                "mood": "life",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#22181c"
+            },
+            {
+                "title": "",
+                "plainText": "everyone here is from somewhere else and trying to forget it.",
+                "hashtags": ["citylife", "identity", "nostalgia"],
+                "mood": "nostalgia",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1b1b2f"
+            },
+            {
+                "title": "8am",
+                "plainText": "the coffee costs more than my dignity at 8am.",
+                "hashtags": ["humour", "mornings", "citylife"],
+                "mood": "humour",
+                "description": "the coffee costs more than my dignity at 8am.",
+                "textAlign": "left",
+                "coverColor": "#1c1917"
+            },
+            {
+                "title": "",
+                "plainText": "we are all in a hurry to arrive at a place we won't enjoy.",
+                "hashtags": ["dark", "society", "life"],
+                "mood": "dark",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1b1b2f"
+            },
+            {
+                "title": "rent",
+                "plainText": "I paid rent to feel lonely in a city of eight million.",
+                "hashtags": ["dark", "urban", "loneliness"],
+                "mood": "dark",
+                "description": "I paid rent to feel lonely in a city of eight million.",
+                "textAlign": "left",
+                "coverColor": "#111827"
+            },
+            {
+                "title": "",
+                "plainText": "progress moved in and the old bookshop moved out.",
+                "hashtags": ["grief", "citylife", "nostalgia"],
+                "mood": "grief",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1b1520"
+            },
+            {
+                "title": "",
+                "plainText": "the noise is company when you know no one.",
+                "hashtags": ["life", "loneliness", "urban"],
+                "mood": "life",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#22181c"
+            },
+            {
+                "title": "opportunity",
+                "plainText": "I came for the opportunity and stayed for the confusion.",
+                "hashtags": ["humour", "citylife", "life"],
+                "mood": "humour",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1b1b2f"
+            },
+            {
+                "title": "",
+                "plainText": "the building they tore down last year had a better soul.",
+                "hashtags": ["grief", "citylife", "nostalgia"],
+                "mood": "nostalgia",
+                "description": "the building they tore down last year had a better soul.",
+                "textAlign": "left",
+                "coverColor": "#1b1520"
+            }
+        ]
+    },
+    {
+        "email": "asif.dev.flutter@gmail.com",
+        "poems": [
+            {
+                "title": "",
+                "plainText": "most doors were open. I kept walking past them.",
+                "hashtags": ["life", "regret", "truth"],
+                "mood": "life",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#0c0a09"
+            },
+            {
+                "title": "certainty",
+                "plainText": "certainty is the beginning of being wrong.",
+                "hashtags": ["philosophy", "truth", "dark"],
+                "mood": "dark",
+                "description": "certainty is the beginning of being wrong.",
+                "textAlign": "left",
+                "coverColor": "#1a0a0a"
+            },
+            {
+                "title": "",
+                "plainText": "I found the answer and immediately doubted the question.",
+                "hashtags": ["humour", "philosophy", "truth"],
+                "mood": "humour",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1c1917"
+            },
+            {
+                "title": "",
+                "plainText": "the truth is not loud. it just repeats.",
+                "hashtags": ["life", "truth", "philosophy"],
+                "mood": "life",
+                "description": "the truth is not loud. it just repeats.",
+                "textAlign": "left",
+                "coverColor": "#0c0a09"
+            },
+            {
+                "title": "",
+                "plainText": "what you avoid tells you more than what you pursue.",
+                "hashtags": ["life", "truth", "growth"],
+                "mood": "life",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1c1917"
+            },
+            {
+                "title": "belief",
+                "plainText": "every belief is a door with something locked behind it.",
+                "hashtags": ["philosophy", "dark", "truth"],
+                "mood": "dark",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1a0a0a"
+            },
+            {
+                "title": "",
+                "plainText": "the questions that scare you are the ones worth sitting with.",
+                "hashtags": ["philosophy", "life", "growth"],
+                "mood": "dark",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#0c0a09"
+            },
+            {
+                "title": "",
+                "plainText": "you were right about most things once you stopped needing to be.",
+                "hashtags": ["ego", "growth", "truth"],
+                "mood": "life",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1c1917"
+            },
+            {
+                "title": "meaning",
+                "plainText": "meaning is made, not found. that's either liberating or terrifying.",
+                "hashtags": ["philosophy", "existential", "life"],
+                "mood": "dark",
+                "description": "meaning is made, not found. that's either liberating or terrifying.",
+                "textAlign": "left",
+                "coverColor": "#1a0a0a"
+            },
+            {
+                "title": "",
+                "plainText": "we fear silence because it asks questions we haven't answered.",
+                "hashtags": ["dark", "philosophy", "truth"],
+                "mood": "dark",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#0c0a09"
+            }
+        ]
+    },
+    {
+        "email": "anchorapp.help@gmail.com",
+        "poems": [
+            {
+                "title": "soup",
+                "plainText": "she brought soup when I didn't ask and I've never forgotten it.",
+                "hashtags": ["love", "kindness", "smallthings"],
+                "mood": "love",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#0f2318"
+            },
+            {
+                "title": "",
+                "plainText": "small kindnesses are the ones that stay.",
+                "hashtags": ["hope", "kindness", "life"],
+                "mood": "hope",
+                "description": "small kindnesses are the ones that stay.",
+                "textAlign": "left",
+                "coverColor": "#163832"
+            },
+            {
+                "title": "",
+                "plainText": "the strangest thing about people is how often they're trying.",
+                "hashtags": ["hope", "people", "life"],
+                "mood": "hope",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#0f2318"
+            },
+            {
+                "title": "order",
+                "plainText": "he remembered my order and that was enough for one day.",
+                "hashtags": ["life", "smallthings", "kindness"],
+                "mood": "life",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#163832"
+            },
+            {
+                "title": "",
+                "plainText": "some friendships happen in a single afternoon and last forever.",
+                "hashtags": ["love", "friendship", "life"],
+                "mood": "love",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#0f2318"
+            },
+            {
+                "title": "6am",
+                "plainText": "people are kinder at 6am than any other hour.",
+                "hashtags": ["life", "people", "mornings"],
+                "mood": "life",
+                "description": "people are kinder at 6am than any other hour.",
+                "textAlign": "left",
+                "coverColor": "#163832"
+            },
+            {
+                "title": "",
+                "plainText": "she said well done and I held it all week.",
+                "hashtags": ["hope", "kindness", "life"],
+                "mood": "hope",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#0f2318"
+            },
+            {
+                "title": "",
+                "plainText": "someone out there is being patient with you right now.",
+                "hashtags": ["hope", "kindness", "connection"],
+                "mood": "hope",
+                "description": "someone out there is being patient with you right now.",
+                "textAlign": "left",
+                "coverColor": "#163832"
+            },
+            {
+                "title": "",
+                "plainText": "the world is better than the news of it.",
+                "hashtags": ["hope", "life", "truth"],
+                "mood": "hope",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#0f2318"
+            },
+            {
+                "title": "birds",
+                "plainText": "the old man fed the birds every morning without fail and never told anyone.",
+                "hashtags": ["life", "kindness", "smallthings"],
+                "mood": "life",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#163832"
+            }
+        ]
+    }
+]

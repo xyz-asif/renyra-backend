@@ -100,8 +100,10 @@ func (h *Handler) GetMyPoems(c *fiber.Ctx) error {
 		limit = 50
 	}
 	before := c.Query("before")
+	// Optional: "public" (Posts tab) or "private" (Drafts tab). Empty = all.
+	visibility := c.Query("visibility")
 
-	page, err := h.service.GetMyPoems(c.Context(), user.ID.Hex(), limit, before)
+	page, err := h.service.GetMyPoems(c.Context(), user.ID.Hex(), limit, before, visibility)
 	if err != nil {
 		return response.BadRequest(c, err.Error())
 	}

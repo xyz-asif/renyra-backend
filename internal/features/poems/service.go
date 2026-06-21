@@ -616,7 +616,7 @@ type Service interface {
 	GetByID(ctx context.Context, poemID string, callerID string) (*models.PoemResponse, error)
 	Update(ctx context.Context, poemID string, authorID string, req UpdatePoemRequest) (*models.PoemResponse, error)
 	Delete(ctx context.Context, poemID string, authorID string) error
-	GetMyPoems(ctx context.Context, authorID string, limit int, before string) (*models.PoemsPage, error)
+	GetMyPoems(ctx context.Context, authorID string, limit int, before string, visibility string) (*models.PoemsPage, error)
 	GetUserPoems(ctx context.Context, targetUserID string, callerID string, limit int, before string) (*models.PoemsPage, error)
 }
 
@@ -1098,10 +1098,16 @@ func (s *service) Delete(ctx context.Context, poemIDStr string, authorIDStr stri
 	return nil
 }
 
-func (s *service) GetMyPoems(ctx context.Context, authorIDStr string, limit int, beforeStr string) (*models.PoemsPage, error) {
+func (s *service) GetMyPoems(ctx context.Context, authorIDStr string, limit int, beforeStr string, visibility string) (*models.PoemsPage, error) {
 	authorID, err := bson.ObjectIDFromHex(authorIDStr)
 	if err != nil {
 		return nil, errors.New("invalid author id")
+	}
+
+	// Optional visibility filter: "public" (Posts tab) or "private" (Drafts tab).
+	// Empty means all of the caller's own poems (back-compat with old clients).
+	if visibility != "" && visibility != models.PoemVisibilityPublic && visibility != models.PoemVisibilityPrivate {
+		return nil, errors.New("invalid visibility filter")
 	}
 
 	if limit <= 0 {
@@ -1121,7 +1127,7 @@ func (s *service) GetMyPoems(ctx context.Context, authorIDStr string, limit int,
 	}
 
 	// Fetch limit+1 to determine hasMore
-	poems, err := s.repo.GetByAuthor(ctx, authorID, limit+1, beforeID, true)
+	poems, err := s.repo.GetByAuthor(ctx, authorID, limit+1, beforeID, true, visibility)
 	if err != nil {
 		return nil, err
 	}
@@ -1187,7 +1193,7 @@ func (s *service) GetUserPoems(ctx context.Context, targetUserIDStr string, call
 	// includePrivate only if the caller is viewing their own profile
 	includePrivate := targetUserID.Hex() == callerID
 
-	poems, err := s.repo.GetByAuthor(ctx, targetUserID, limit+1, beforeID, includePrivate)
+	poems, err := s.repo.GetByAuthor(ctx, targetUserID, limit+1, beforeID, includePrivate, "")
 	if err != nil {
 		return nil, err
 	}

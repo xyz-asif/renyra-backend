@@ -1,0 +1,802 @@
+[
+    {
+        "email": "adi.hr.msm@gmail.com",
+        "poems": [
+            {
+                "title": "dedication award",
+                "plainText": "they gave him an award for dedication.\nhe had nowhere else to be.",
+                "hashtags": [
+                    "work",
+                    "corporate",
+                    "truth"
+                ],
+                "mood": "dark",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1b1b2f"
+            },
+            {
+                "title": "nine years",
+                "plainText": "nine years at this company.\nthe plant on my desk has had three funerals.",
+                "hashtags": [
+                    "work",
+                    "officelife",
+                    "life"
+                ],
+                "mood": "life",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#22181c"
+            },
+            {
+                "title": "resignation",
+                "plainText": "the resignation letter was the best writing i've done since college.",
+                "hashtags": [
+                    "work",
+                    "writing",
+                    "truth"
+                ],
+                "mood": "humour",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1b1520"
+            },
+            {
+                "title": "how are you",
+                "plainText": "my manager asked how i was doing.\ni said fine. he said great.\nnobody needed more than that.",
+                "hashtags": [
+                    "corporate",
+                    "masks",
+                    "life"
+                ],
+                "mood": "dark",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1b1b2f"
+            },
+            {
+                "title": "friday 6pm",
+                "plainText": "everyone walking fast in different directions,\npretending they have somewhere to be.",
+                "hashtags": [
+                    "mumbai",
+                    "citylife",
+                    "truth"
+                ],
+                "mood": "life",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#22181c"
+            },
+            {
+                "title": "repotted",
+                "plainText": "transferred after eight years.\nthe plants got repotted for someone new.",
+                "hashtags": [
+                    "work",
+                    "grief",
+                    "mumbai"
+                ],
+                "mood": "grief",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1b1520"
+            },
+            {
+                "title": "changes you",
+                "plainText": "she said the city changes you.\ni said i know.\nneither of us said it like it was a good thing.",
+                "hashtags": [
+                    "mumbai",
+                    "love",
+                    "truth"
+                ],
+                "mood": "longing",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1b1b2f"
+            },
+            {
+                "title": "notice period",
+                "plainText": "thirty days to wrap up eight years.\neveryone agreed that was plenty of time.",
+                "hashtags": [
+                    "work",
+                    "corporate",
+                    "grief"
+                ],
+                "mood": "grief",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1b1b2f"
+            },
+            {
+                "title": "synergy",
+                "plainText": "the word synergy was used four times in the meeting.\nnobody asked what it meant.\nnobody needed to.",
+                "hashtags": [
+                    "corporate",
+                    "humour",
+                    "work"
+                ],
+                "mood": "humour",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#22181c"
+            },
+            {
+                "title": "window seat",
+                "plainText": "i got the window seat after three years.\nby then i had stopped looking outside.",
+                "hashtags": [
+                    "work",
+                    "life",
+                    "truth"
+                ],
+                "mood": "dark",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1b1520"
+            },
+            {
+                "title": "virar fast",
+                "plainText": "the virar fast doesn't wait.\nnot for you. not for anyone.\nthis is the first thing mumbai teaches.",
+                "hashtags": [
+                    "mumbai",
+                    "trains",
+                    "life"
+                ],
+                "mood": "life",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1b1b2f"
+            },
+            {
+                "title": "increment",
+                "plainText": "twelve percent.\nhe said it like it was generosity.\ni nodded like i agreed.",
+                "hashtags": [
+                    "corporate",
+                    "truth",
+                    "dark"
+                ],
+                "mood": "dark",
+                "description": "twelve percent. said like generosity. nodded like i agreed.",
+                "textAlign": "left",
+                "coverColor": "#22181c"
+            },
+            {
+                "title": "marine lines",
+                "plainText": "the sea is right there.\nwe walk past it every day\nwithout stopping.",
+                "hashtags": [
+                    "mumbai",
+                    "citylife",
+                    "nature"
+                ],
+                "mood": "life",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1b1520"
+            },
+            {
+                "title": "out of office",
+                "plainText": "i set an out of office for ten days.\non day three, i checked my email.\nold habits have no respect for boundaries.",
+                "hashtags": [
+                    "work",
+                    "humour",
+                    "habits"
+                ],
+                "mood": "humour",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1b1b2f"
+            }
+        ]
+    },
+    {
+        "email": "connectasifshaik@gmail.com",
+        "poems": [
+            {
+                "title": "scale",
+                "plainText": "the universe is 13.8 billion years old.\nyou've been overthinking this for twenty minutes.",
+                "hashtags": [
+                    "cosmos",
+                    "anxiety",
+                    "perspective"
+                ],
+                "mood": "dark",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#0d1117"
+            },
+            {
+                "title": "stardust reminder",
+                "plainText": "you are made of dead stars.\ni'm not sure that helps, but it's true.",
+                "hashtags": [
+                    "space",
+                    "existence",
+                    "life"
+                ],
+                "mood": "life",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#0b0f1a"
+            },
+            {
+                "title": "300,000 km/s",
+                "plainText": "light travels 300,000 km per second.\nyour message took three days.",
+                "hashtags": [
+                    "longing",
+                    "distance",
+                    "space"
+                ],
+                "mood": "longing",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#111827"
+            },
+            {
+                "title": "five extinctions",
+                "plainText": "the earth has survived five mass extinctions.\nyou will survive this.",
+                "hashtags": [
+                    "hope",
+                    "cosmos",
+                    "perspective"
+                ],
+                "mood": "hope",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#0d1117"
+            },
+            {
+                "title": "somewhere",
+                "plainText": "somewhere a star is dying.\nhere, i'm trying to sleep.",
+                "hashtags": [
+                    "night",
+                    "cosmos",
+                    "dark"
+                ],
+                "mood": "dark",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#0b0f1a"
+            },
+            {
+                "title": "search",
+                "plainText": "i looked for myself in the cosmos.\nthe cosmos did not look back.",
+                "hashtags": [
+                    "existence",
+                    "space",
+                    "dark"
+                ],
+                "mood": "dark",
+                "description": "i looked for myself in the cosmos. the cosmos did not look back.",
+                "textAlign": "left",
+                "coverColor": "#111827"
+            },
+            {
+                "title": "orbit",
+                "plainText": "everything that comes close enough\neventually becomes something that circles and cannot leave.",
+                "hashtags": [
+                    "love",
+                    "space",
+                    "feelings"
+                ],
+                "mood": "love",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#0d1117"
+            },
+            {
+                "title": "black hole",
+                "plainText": "a black hole doesn't pull you in.\nyou fall toward it willingly\nbecause bending space is just that convincing.",
+                "hashtags": [
+                    "cosmos",
+                    "love",
+                    "dark"
+                ],
+                "mood": "dark",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#0d1117"
+            },
+            {
+                "title": "pale blue dot",
+                "plainText": "from four billion miles away,\nearth is less than a pixel.\neverything you're worried about\nis on that pixel.",
+                "hashtags": [
+                    "space",
+                    "perspective",
+                    "life"
+                ],
+                "mood": "life",
+                "description": "from four billion miles, earth is less than a pixel. everything is on that pixel.",
+                "textAlign": "left",
+                "coverColor": "#0b0f1a"
+            },
+            {
+                "title": "half life",
+                "plainText": "carbon-14 decays at a fixed rate.\nwe use it to date what's dead.\ni wonder what they'd use for grief.",
+                "hashtags": [
+                    "science",
+                    "grief",
+                    "dark"
+                ],
+                "mood": "grief",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#111827"
+            },
+            {
+                "title": "event horizon",
+                "plainText": "there is a point\nbeyond which nothing returns.\nyou passed mine a long time ago.",
+                "hashtags": [
+                    "love",
+                    "cosmos",
+                    "longing"
+                ],
+                "mood": "love",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#0d1117"
+            },
+            {
+                "title": "rotation",
+                "plainText": "the earth rotates at 1670 km/h.\neverything feels still.\nfeeling and being are different things.",
+                "hashtags": [
+                    "cosmos",
+                    "perspective",
+                    "life"
+                ],
+                "mood": "life",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#0b0f1a"
+            },
+            {
+                "title": "signal delay",
+                "plainText": "a message from mars\ntakes twenty minutes to arrive.\nyour silence has been going on for weeks.",
+                "hashtags": [
+                    "longing",
+                    "space",
+                    "distance"
+                ],
+                "mood": "longing",
+                "description": "a message from mars takes twenty minutes. your silence has been weeks.",
+                "textAlign": "left",
+                "coverColor": "#111827"
+            },
+            {
+                "title": "finite",
+                "plainText": "the sun has five billion years left.\ni find that comforting.\nwe are not the last thing that will love this sky.",
+                "hashtags": [
+                    "hope",
+                    "cosmos",
+                    "nature"
+                ],
+                "mood": "hope",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#0d1117"
+            }
+        ]
+    },
+    {
+        "email": "arshadraza506@gmail.com",
+        "poems": [
+            {
+                "title": "june",
+                "plainText": "she left in june.\ni still check the weather there.",
+                "hashtags": [
+                    "love",
+                    "loss",
+                    "longing"
+                ],
+                "mood": "longing",
+                "description": "she left in june. i still check the weather there.",
+                "textAlign": "left",
+                "coverColor": "#1a0a1a"
+            },
+            {
+                "title": "good at it",
+                "plainText": "we were good at missing each other.\nterrible at everything else.",
+                "hashtags": [
+                    "love",
+                    "relationships",
+                    "truth"
+                ],
+                "mood": "love",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1a0a1a"
+            },
+            {
+                "title": "buying time",
+                "plainText": "he said i love you\nlike he was buying time.",
+                "hashtags": [
+                    "love",
+                    "truth",
+                    "dark"
+                ],
+                "mood": "dark",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#2b0a0a"
+            },
+            {
+                "title": "forwarding address",
+                "plainText": "some people leave a forwarding address.\nshe didn't.",
+                "hashtags": [
+                    "grief",
+                    "love",
+                    "loss"
+                ],
+                "mood": "grief",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1a0a1a"
+            },
+            {
+                "title": "evidence",
+                "plainText": "i kept her number.\nas evidence.",
+                "hashtags": [
+                    "love",
+                    "longing",
+                    "loss"
+                ],
+                "mood": "longing",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#2b0a0a"
+            },
+            {
+                "title": "eight months",
+                "plainText": "we ran out of things to say.\nkept talking anyway.\nfor eight months.",
+                "hashtags": [
+                    "love",
+                    "relationships",
+                    "truth"
+                ],
+                "mood": "life",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1a0a1a"
+            },
+            {
+                "title": "almost",
+                "plainText": "we were so close to being something.\nwe talk about the weather now.",
+                "hashtags": [
+                    "longing",
+                    "love",
+                    "loss"
+                ],
+                "mood": "longing",
+                "description": "we were so close to being something. we talk about the weather now.",
+                "textAlign": "left",
+                "coverColor": "#2b0a0a"
+            },
+            {
+                "title": "fixed",
+                "plainText": "you didn't break me.\nyou just showed me which parts were already cracked.",
+                "hashtags": [
+                    "love",
+                    "truth",
+                    "healing"
+                ],
+                "mood": "dark",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1a0a1a"
+            },
+            {
+                "title": "read",
+                "plainText": "you read it.\nyou just didn't have anything to say.\nwhich was also something to say.",
+                "hashtags": [
+                    "longing",
+                    "silence",
+                    "love"
+                ],
+                "mood": "longing",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1a0a1a"
+            },
+            {
+                "title": "mutual friends",
+                "plainText": "we have three mutual friends\nwho carefully never mention either of us\nto the other.\nkind of them.",
+                "hashtags": [
+                    "love",
+                    "loss",
+                    "people"
+                ],
+                "mood": "grief",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#2b0a0a"
+            },
+            {
+                "title": "uninstalled",
+                "plainText": "i deleted the app.\nthen redownloaded it.\nthen deleted it again.\ncalled it progress both times.",
+                "hashtags": [
+                    "love",
+                    "humour",
+                    "habits"
+                ],
+                "mood": "humour",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1a0a1a"
+            },
+            {
+                "title": "your city",
+                "plainText": "i visited your city for work.\ndid not go to your street.\nthat took more effort than the flight.",
+                "hashtags": [
+                    "longing",
+                    "love",
+                    "loss"
+                ],
+                "mood": "longing",
+                "description": "visited your city. didn't go to your street. that took more effort.",
+                "textAlign": "left",
+                "coverColor": "#2b0a0a"
+            },
+            {
+                "title": "on time",
+                "plainText": "you were always on time.\nexcept for when it mattered.",
+                "hashtags": [
+                    "love",
+                    "truth",
+                    "dark"
+                ],
+                "mood": "dark",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1a0a1a"
+            },
+            {
+                "title": "translated",
+                "plainText": "i loved you in a language\nyou never learned.\nthe miscommunication was mine.",
+                "hashtags": [
+                    "love",
+                    "grief",
+                    "truth"
+                ],
+                "mood": "love",
+                "description": "i loved you in a language you never learned. the miscommunication was mine.",
+                "textAlign": "left",
+                "coverColor": "#2b0a0a"
+            },
+            {
+                "title": "september",
+                "plainText": "i don't miss you exactly.\ni miss who i was\nwhen i thought you were who i thought you were.",
+                "hashtags": [
+                    "grief",
+                    "love",
+                    "nostalgia"
+                ],
+                "mood": "grief",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#1a0a1a"
+            },
+            {
+                "title": "draft",
+                "plainText": "saved as draft: 47.\nsentences that started with your name\nand went nowhere honest.",
+                "hashtags": [
+                    "love",
+                    "longing",
+                    "writing"
+                ],
+                "mood": "longing",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#2b0a0a"
+            }
+        ]
+    },
+    {
+        "email": "nskb126@gmail.com",
+        "poems": [
+            {
+                "title": "mid-sentence",
+                "plainText": "i am not broken.\ni am mid-sentence.",
+                "hashtags": [
+                    "life",
+                    "healing",
+                    "dark"
+                ],
+                "mood": "life",
+                "description": "i am not broken. i am mid-sentence.",
+                "textAlign": "left",
+                "coverColor": "#111111"
+            },
+            {
+                "title": "what they leave",
+                "plainText": "everyone arrives.\nthe interesting part is what they leave.",
+                "hashtags": [
+                    "people",
+                    "truth",
+                    "life"
+                ],
+                "mood": "dark",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#0c0c0c"
+            },
+            {
+                "title": "tuesday",
+                "plainText": "you called it complicated.\ni called it tuesday.",
+                "hashtags": [
+                    "life",
+                    "humour",
+                    "truth"
+                ],
+                "mood": "humour",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#111111"
+            },
+            {
+                "title": "intervals",
+                "plainText": "i smiled at the right moments.\nnobody noticed the intervals.",
+                "hashtags": [
+                    "dark",
+                    "masks",
+                    "loneliness"
+                ],
+                "mood": "dark",
+                "description": "i smiled at the right moments. nobody noticed the intervals.",
+                "textAlign": "left",
+                "coverColor": "#0c0c0c"
+            },
+            {
+                "title": "posture",
+                "plainText": "healing is just forgetting\nwith better posture.",
+                "hashtags": [
+                    "healing",
+                    "dark",
+                    "truth"
+                ],
+                "mood": "dark",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#111111"
+            },
+            {
+                "title": "accurate",
+                "plainText": "i stopped explaining myself.\nthe silence was more accurate anyway.",
+                "hashtags": [
+                    "silence",
+                    "truth",
+                    "life"
+                ],
+                "mood": "life",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#0c0c0c"
+            },
+            {
+                "title": "soft landing",
+                "plainText": "you were a lesson disguised as a person.\nexpensive tuition.",
+                "hashtags": [
+                    "love",
+                    "truth",
+                    "dark"
+                ],
+                "mood": "dark",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#111111"
+            },
+            {
+                "title": "still",
+                "plainText": "i am not waiting for anything.\ni have just not decided to move yet.",
+                "hashtags": [
+                    "life",
+                    "dark",
+                    "stillness"
+                ],
+                "mood": "life",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#0c0c0c"
+            },
+            {
+                "title": "loudest room",
+                "plainText": "i am loudest\nin rooms where nobody is listening.",
+                "hashtags": [
+                    "dark",
+                    "loneliness",
+                    "truth"
+                ],
+                "mood": "dark",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#111111"
+            },
+            {
+                "title": "fine",
+                "plainText": "fine is the word\nfor things we've stopped explaining.",
+                "hashtags": [
+                    "truth",
+                    "life",
+                    "dark"
+                ],
+                "mood": "dark",
+                "description": "fine is the word for things we've stopped explaining.",
+                "textAlign": "left",
+                "coverColor": "#0c0c0c"
+            },
+            {
+                "title": "kindness",
+                "plainText": "some people mistake my quietness for depth.\ni don't correct them.",
+                "hashtags": [
+                    "humour",
+                    "truth",
+                    "life"
+                ],
+                "mood": "humour",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#111111"
+            },
+            {
+                "title": "exit",
+                "plainText": "i leave every party\nten minutes before i'm ready.\njust to feel like i chose.",
+                "hashtags": [
+                    "life",
+                    "dark",
+                    "control"
+                ],
+                "mood": "life",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#0c0c0c"
+            },
+            {
+                "title": "hunger",
+                "plainText": "i am not empty.\ni am very specifically hungry\nfor something i cannot name.",
+                "hashtags": [
+                    "longing",
+                    "dark",
+                    "life"
+                ],
+                "mood": "longing",
+                "description": "not empty. very specifically hungry for something i cannot name.",
+                "textAlign": "left",
+                "coverColor": "#111111"
+            },
+            {
+                "title": "both",
+                "plainText": "i contain the version of me that gave up\nand the version that hasn't yet.\nthey do not speak.",
+                "hashtags": [
+                    "dark",
+                    "life",
+                    "identity"
+                ],
+                "mood": "dark",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#0c0c0c"
+            },
+            {
+                "title": "good days",
+                "plainText": "on good days i believe things will work out.\non other days i believe more accurately.",
+                "hashtags": [
+                    "dark",
+                    "humour",
+                    "life"
+                ],
+                "mood": "humour",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#111111"
+            },
+            {
+                "title": "receipt",
+                "plainText": "i give a lot.\ni keep receipts for none of it.\nwhich is either generosity or stupidity.\nprobably both.",
+                "hashtags": [
+                    "life",
+                    "truth",
+                    "people"
+                ],
+                "mood": "life",
+                "description": null,
+                "textAlign": "left",
+                "coverColor": "#0c0c0c"
+            }
+        ]
+    }
+]

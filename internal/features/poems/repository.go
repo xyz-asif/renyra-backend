@@ -15,7 +15,7 @@ type Repository interface {
 	GetByID(ctx context.Context, poemID bson.ObjectID) (*models.Poem, error)
 	Update(ctx context.Context, poemID bson.ObjectID, update PoemUpdateFields) (*models.Poem, error)
 	SoftDelete(ctx context.Context, poemID, authorID bson.ObjectID) error
-	GetByAuthor(ctx context.Context, authorID bson.ObjectID, limit int, beforeID *bson.ObjectID, includePrivate bool) ([]models.Poem, error)
+	GetByAuthor(ctx context.Context, authorID bson.ObjectID, limit int, beforeID *bson.ObjectID, includePrivate bool, visibilityFilter string) ([]models.Poem, error)
 	UpsertHashtags(ctx context.Context, tags []string) error
 	DecrementHashtags(ctx context.Context, tags []string) error
 }
@@ -139,14 +139,19 @@ func (r *repository) SoftDelete(ctx context.Context, poemID, authorID bson.Objec
 //
 // The cursor is still the last poem's _id (API unchanged). We look up the cursor
 // poem's publishedAt to build an accurate compound keyset filter.
-func (r *repository) GetByAuthor(ctx context.Context, authorID bson.ObjectID, limit int, beforeID *bson.ObjectID, includePrivate bool) ([]models.Poem, error) {
+func (r *repository) GetByAuthor(ctx context.Context, authorID bson.ObjectID, limit int, beforeID *bson.ObjectID, includePrivate bool, visibilityFilter string) ([]models.Poem, error) {
 	filter := bson.M{
 		"authorId":  authorID,
 		"isDeleted": false,
 		"isRepost":  bson.M{"$ne": true},
 	}
 
-	if !includePrivate {
+	// An explicit visibility filter (e.g. "public" for the Posts tab, "private"
+	// for the Drafts tab) takes precedence so each tab can paginate its own type
+	// independently. Falls back to the includePrivate gate when not specified.
+	if visibilityFilter != "" {
+		filter["visibility"] = visibilityFilter
+	} else if !includePrivate {
 		filter["visibility"] = models.PoemVisibilityPublic
 	}
 
