@@ -16,6 +16,7 @@ type Repository interface {
 	Update(ctx context.Context, poemID bson.ObjectID, update PoemUpdateFields) (*models.Poem, error)
 	SoftDelete(ctx context.Context, poemID, authorID bson.ObjectID) error
 	GetByAuthor(ctx context.Context, authorID bson.ObjectID, limit int, beforeID *bson.ObjectID, includePrivate bool, visibilityFilter string) ([]models.Poem, error)
+	CountPublicByAuthor(ctx context.Context, authorID bson.ObjectID) (int, error)
 	UpsertHashtags(ctx context.Context, tags []string) error
 	DecrementHashtags(ctx context.Context, tags []string) error
 }
@@ -196,6 +197,24 @@ func (r *repository) GetByAuthor(ctx context.Context, authorID bson.ObjectID, li
 		return nil, err
 	}
 	return result, nil
+}
+
+// CountPublicByAuthor returns the number of a user's published, non-repost poems.
+// This is the "Poems" stat shown on profiles — computed live (like followers/
+// following counts) so it stays accurate regardless of drafts, reposts, or how
+// many pages the client has scrolled. Mirrors the GetByAuthor "public posts"
+// filter exactly.
+func (r *repository) CountPublicByAuthor(ctx context.Context, authorID bson.ObjectID) (int, error) {
+	count, err := r.poems.CountDocuments(ctx, bson.M{
+		"authorId":   authorID,
+		"isDeleted":  false,
+		"isRepost":   bson.M{"$ne": true},
+		"visibility": models.PoemVisibilityPublic,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return int(count), nil
 }
 
 // UpsertHashtags increments usageCount for each tag, creating the document if it doesn't exist.

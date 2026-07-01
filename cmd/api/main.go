@@ -112,7 +112,7 @@ func main() {
 	poemHandler := poems.NewHandler(poemService)
 
 	followRepo := follows.NewRepository(db.Database)
-	followService := follows.NewService(followRepo, userRepo, notifService, db.Client)
+	followService := follows.NewService(followRepo, userRepo, poemRepo, notifService, db.Client)
 	followHandler := follows.NewHandler(followService)
 
 	socialService := social.NewService(socialRepo, userRepo, notifService, db.Database)

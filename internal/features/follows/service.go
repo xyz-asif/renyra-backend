@@ -20,15 +20,23 @@ type Service interface {
 	GetFollowing(ctx context.Context, userIDStr, callerIDStr string, limit int, before string) ([]models.UserSearchResult, bool, error)
 }
 
+// PoemCounter provides the live "public poems" count for a user's profile.
+// Declared locally (satisfied by poems.Repository) to keep the profile stat
+// accurate without creating an import cycle between follows and poems.
+type PoemCounter interface {
+	CountPublicByAuthor(ctx context.Context, authorID bson.ObjectID) (int, error)
+}
+
 type service struct {
 	repo         Repository
 	userRepo     users.Repository
+	poemCounter  PoemCounter
 	notifService notifications.Service
 	mongoClient  *mongo.Client
 }
 
-func NewService(repo Repository, userRepo users.Repository, notifService notifications.Service, mongoClient *mongo.Client) Service {
-	return &service{repo: repo, userRepo: userRepo, notifService: notifService, mongoClient: mongoClient}
+func NewService(repo Repository, userRepo users.Repository, poemCounter PoemCounter, notifService notifications.Service, mongoClient *mongo.Client) Service {
+	return &service{repo: repo, userRepo: userRepo, poemCounter: poemCounter, notifService: notifService, mongoClient: mongoClient}
 }
 
 // ToggleFollow follows or unfollows a user. Returns true if now following, false if unfollowed.
@@ -146,9 +154,18 @@ func (s *service) GetPublicProfile(ctx context.Context, targetUserIDStr, callerI
 		return nil, errors.New("user not found")
 	}
 
-	// Compute live counts from the follows collection (source of truth)
+	// Compute live counts (source of truth) rather than trusting denormalized
+	// counters. followers/following come from the follows collection; postsCount
+	// is a live count of published, non-repost poems so it matches the "Poems"
+	// tab exactly (the user.PostsCount counter also includes drafts and reposts).
 	followersCount, _ := s.repo.CountFollowers(ctx, targetUserID)
 	followingCount, _ := s.repo.CountFollowing(ctx, targetUserID)
+	postsCount := user.PostsCount
+	if s.poemCounter != nil {
+		if c, err := s.poemCounter.CountPublicByAuthor(ctx, targetUserID); err == nil {
+			postsCount = c
+		}
+	}
 
 	resp := &models.PublicProfileResponse{
 		ID:             user.ID.Hex(),
@@ -159,7 +176,7 @@ func (s *service) GetPublicProfile(ctx context.Context, targetUserIDStr, callerI
 		Bio:            user.Bio,
 		ExternalLink:   user.ExternalLink,
 		IsEditor:       user.IsEditor,
-		PostsCount:     user.PostsCount,
+		PostsCount:     postsCount,
 		FollowersCount: followersCount,
 		FollowingCount: followingCount,
 		IsMe:           callerIDStr == targetUserIDStr,
