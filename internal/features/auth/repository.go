@@ -11,7 +11,12 @@ import (
 
 type Repository interface {
 	SaveRefreshToken(ctx context.Context, userID bson.ObjectID, tokenHash string, expiresAt time.Time) error
-	FindRefreshToken(ctx context.Context, tokenHash string) (*models.RefreshToken, error)
+	// ConsumeRefreshToken atomically finds AND deletes the token in a single
+	// operation, returning the deleted document. Atomicity guarantees that when
+	// two requests present the same token concurrently, exactly ONE consumes it
+	// (the other gets mongo.ErrNoDocuments) — preventing double-issuance and
+	// orphaned refresh tokens under a rotation race.
+	ConsumeRefreshToken(ctx context.Context, tokenHash string) (*models.RefreshToken, error)
 	DeleteRefreshToken(ctx context.Context, tokenHash string) error
 	DeleteAllUserTokens(ctx context.Context, userID bson.ObjectID) error
 }
@@ -35,9 +40,9 @@ func (r *repository) SaveRefreshToken(ctx context.Context, userID bson.ObjectID,
 	return err
 }
 
-func (r *repository) FindRefreshToken(ctx context.Context, tokenHash string) (*models.RefreshToken, error) {
+func (r *repository) ConsumeRefreshToken(ctx context.Context, tokenHash string) (*models.RefreshToken, error) {
 	var rt models.RefreshToken
-	err := r.col.FindOne(ctx, bson.M{"tokenHash": tokenHash}).Decode(&rt)
+	err := r.col.FindOneAndDelete(ctx, bson.M{"tokenHash": tokenHash}).Decode(&rt)
 	if err != nil {
 		return nil, err
 	}

@@ -92,21 +92,19 @@ func (s *service) Exchange(ctx context.Context, firebaseToken string) (string, s
 func (s *service) Refresh(ctx context.Context, refreshToken string) (string, string, error) {
 	hash := hashToken(refreshToken)
 
-	// 1. Look up hashed token in DB
-	rt, err := s.repo.FindRefreshToken(ctx, hash)
+	// 1. Atomically claim (find + delete) the token — single-use rotation that
+	//    prevents replay. Atomicity means concurrent refreshes with the same
+	//    token can't both succeed: exactly one wins, the rest get "invalid or
+	//    expired refresh token" (no double-issuance / orphaned tokens).
+	rt, err := s.repo.ConsumeRefreshToken(ctx, hash)
 	if err != nil {
 		return "", "", errors.New("invalid or expired refresh token")
 	}
 
-	// 2. Check expiry (belt-and-suspenders; MongoDB TTL index also cleans up)
+	// 2. Check expiry (belt-and-suspenders; MongoDB TTL index also cleans up).
+	//    The row is already deleted above, so no separate cleanup is needed.
 	if time.Now().After(rt.ExpiresAt) {
-		_ = s.repo.DeleteRefreshToken(ctx, hash)
 		return "", "", errors.New("refresh token expired")
-	}
-
-	// 3. Delete old record immediately (token rotation — prevents replay)
-	if err := s.repo.DeleteRefreshToken(ctx, hash); err != nil {
-		return "", "", err
 	}
 
 	// 4. Load user for claims
