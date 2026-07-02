@@ -628,6 +628,7 @@ func (s *service) ToggleRepost(ctx context.Context, userIDStr, poemIDStr string)
 	}
 
 	// Create repost document
+	now := time.Now()
 	repost := &models.Poem{
 		AuthorID:    userID,
 		IsRepost:    true,
@@ -637,9 +638,13 @@ func (s *service) ToggleRepost(ctx context.Context, userIDStr, poemIDStr string)
 		PlainText:   original.PlainText,
 		Hashtags:    original.Hashtags,
 		Visibility:  models.PoemVisibilityPublic,
+		// A repost is public the moment it's created. PublishedAt is the home
+		// feed sort key (sorted DESC with no createdAt fallback), so without it
+		// the repost sorts below every post that has one and never surfaces.
+		PublishedAt: &now,
 	}
-	repost.CreatedAt = time.Now()
-	repost.UpdatedAt = time.Now()
+	repost.CreatedAt = now
+	repost.UpdatedAt = now
 
 	res, err := s.poemsCol.InsertOne(ctx, repost)
 	if err != nil {
