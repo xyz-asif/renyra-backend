@@ -634,6 +634,7 @@ type CreatePoemRequest struct {
 	CoverColor    string   `json:"coverColor"`    // hex from editor
 	Description   string   `json:"description"`   // NEW: poem description with @mentions
 	TextAlign     string   `json:"textAlign"`     // NEW: "left" | "center" | "right"
+	FontFamily    string   `json:"fontFamily"`    // NEW: whole-poem font, one of models.ValidFonts
 }
 
 // UpdatePoemRequest — same fields, all optional (only changed fields need to be sent)
@@ -650,6 +651,7 @@ type UpdatePoemRequest struct {
 	CoverColor    string   `json:"coverColor"`
 	Description   string   `json:"description"` // NEW
 	TextAlign     string   `json:"textAlign"`   // NEW
+	FontFamily    string   `json:"fontFamily"`  // NEW
 }
 
 type service struct {
@@ -795,6 +797,7 @@ func (s *service) toResponse(poem *models.Poem, author *models.User) *models.Poe
 		CoverColor:    poem.CoverColor,
 		Description:   poem.Description,
 		TextAlign:     poem.TextAlign,
+		FontFamily:    poem.FontFamily,
 		LikesCount:    poem.LikesCount,
 		CommentsCount: poem.CommentsCount,
 		RepostsCount:  poem.RepostsCount,
@@ -863,6 +866,11 @@ func (s *service) Create(ctx context.Context, authorIDStr string, req CreatePoem
 		return nil, errors.New("textAlign must be left, center, or right")
 	}
 
+	// Validate fontFamily (empty = default; otherwise must be a whitelisted family)
+	if req.FontFamily != "" && !models.ValidFonts[req.FontFamily] {
+		return nil, errors.New("invalid fontFamily value")
+	}
+
 	// Validate description length
 	if len([]rune(req.Description)) > 200 {
 		return nil, errors.New("description exceeds 200 character limit")
@@ -887,6 +895,7 @@ func (s *service) Create(ctx context.Context, authorIDStr string, req CreatePoem
 		CoverColor:    req.CoverColor,
 		Description:   req.Description,
 		TextAlign:     req.TextAlign,
+		FontFamily:    req.FontFamily,
 		Mentions:      mentionIDs,
 	}
 
@@ -1004,6 +1013,11 @@ func (s *service) Update(ctx context.Context, poemIDStr string, authorIDStr stri
 		return nil, errors.New("textAlign must be left, center, or right")
 	}
 
+	// Validate fontFamily (empty = default; otherwise must be a whitelisted family)
+	if req.FontFamily != "" && !models.ValidFonts[req.FontFamily] {
+		return nil, errors.New("invalid fontFamily value")
+	}
+
 	// Validate description length
 	if len([]rune(req.Description)) > 200 {
 		return nil, errors.New("description exceeds 200 character limit")
@@ -1041,6 +1055,7 @@ func (s *service) Update(ctx context.Context, poemIDStr string, authorIDStr stri
 		CoverColor:    req.CoverColor,
 		Description:   req.Description,
 		TextAlign:     req.TextAlign,
+		FontFamily:    req.FontFamily,
 		Mentions:      newMentionIDs,
 		PublishedAt:   publishedAt,
 	})

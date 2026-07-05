@@ -1,5 +1,7 @@
 .env
 *.env
+.env.*
+*.bak
 serviceAccountKey.json
 api
 api.exe

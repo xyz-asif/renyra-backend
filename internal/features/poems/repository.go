@@ -34,6 +34,7 @@ type PoemUpdateFields struct {
 	CoverColor    string
 	Description   string
 	TextAlign     string
+	FontFamily    string
 	Mentions      []bson.ObjectID
 	// PublishedAt is non-nil only on a private→public transition.
 	// The repository sets it in the document only when provided.
@@ -100,6 +101,7 @@ func (r *repository) Update(ctx context.Context, poemID bson.ObjectID, fields Po
 		"coverColor":    fields.CoverColor,
 		"description":   fields.Description,
 		"textAlign":     fields.TextAlign,
+		"fontFamily":    fields.FontFamily,
 		"mentions":      fields.Mentions,
 		"updatedAt":     time.Now(),
 	}

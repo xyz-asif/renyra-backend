@@ -19,6 +19,18 @@ var ValidMoods = map[string]bool{
 	"life": true, "longing": true,
 }
 
+// Poem fonts — whitelist matching the bundled families in the frontend
+// pubspec (assets/fonts). An empty fontFamily is valid and renders in the
+// default (JosefinSans). Any value here must have a matching `fonts:` entry
+// in the Flutter pubspec, or the poem will fall back to the platform default.
+var ValidFonts = map[string]bool{
+	"JosefinSans": true, "PlayfairDisplay": true, "Lora": true,
+	"Merriweather": true, "EBGaramond": true, "Poppins": true,
+	"Montserrat": true, "Raleway": true, "Cormorant": true,
+	"BebasNeue": true, "DancingScript": true, "Caveat": true,
+	"Sacramento": true, "Satisfy": true, "Pacifico": true,
+}
+
 type Poem struct {
 	ID            bson.ObjectID `bson:"_id,omitempty"        json:"id"`
 	AuthorID      bson.ObjectID `bson:"authorId"             json:"authorId"`
@@ -34,6 +46,7 @@ type Poem struct {
 	CoverColor    string        `bson:"coverColor,omitempty" json:"coverColor,omitempty"` // hex color from editor
 	Description   string        `bson:"description,omitempty" json:"description,omitempty"`
 	TextAlign     string        `bson:"textAlign,omitempty"   json:"textAlign,omitempty"`   // "left" | "center" | "right"
+	FontFamily    string        `bson:"fontFamily,omitempty"  json:"fontFamily,omitempty"`  // whole-poem font, one of ValidFonts; empty = default
 	Mentions      []bson.ObjectID `bson:"mentions,omitempty"    json:"mentions,omitempty"`    // user IDs parsed from description @mentions
 	LikesCount    int           `bson:"likesCount"           json:"likesCount"`
 	CommentsCount int           `bson:"commentsCount"        json:"commentsCount"`
@@ -67,6 +80,7 @@ type PoemResponse struct {
 	CoverColor    string     `json:"coverColor,omitempty"`
 	Description   string     `json:"description,omitempty"`
 	TextAlign     string     `json:"textAlign,omitempty"`
+	FontFamily    string     `json:"fontFamily,omitempty"`
 	Mentions      []MentionedUser `json:"mentions"`
 	LikesCount     int           `json:"likesCount"`
 	CommentsCount  int           `json:"commentsCount"`
