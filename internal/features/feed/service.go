@@ -75,6 +75,7 @@ func (s *service) buildPoemResponse(
 		CoverColor:     poem.CoverColor,
 		Description:    poem.Description,
 		TextAlign:      poem.TextAlign,
+		FontFamily:     poem.FontFamily,
 		LikesCount:     poem.LikesCount,
 		CommentsCount:  poem.CommentsCount,
 		RepostsCount:   poem.RepostsCount,
